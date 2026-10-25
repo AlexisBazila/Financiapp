@@ -6,7 +6,19 @@ y se pueden aplicar al plan.
 
 ## Estado
 
-Etapa 1 en curso. Hoy la app muestra la previsión con datos de ejemplo; todavía no guarda nada.
+Etapa 1 en curso: login, cuentas (con tarjetas y su cierre de cada mes), movimientos y la previsión
+con los datos guardados en Supabase. `/ejemplo` muestra la previsión con datos de muestra.
+
+## Configurar Supabase y Vercel
+
+1. En Supabase, abrí el **SQL Editor**, pegá cada archivo de `supabase/migrations/` en orden y ejecutalo.
+2. En Supabase, en *Authentication → URL Configuration*, poné como **Site URL** la dirección de Vercel
+   (por ejemplo `https://financiapp.vercel.app`) y agregala también en **Redirect URLs** como
+   `https://financiapp.vercel.app/**`.
+3. En Vercel, en *Settings → Environment Variables*, cargá `NEXT_PUBLIC_SUPABASE_URL` y
+   `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (Project URL y publishable key de Supabase).
+
+Para correrla en tu computadora, poné esas dos variables en un archivo `.env.local`.
 
 ## Cómo correrla
 
@@ -25,4 +37,6 @@ npm test        # tests del motor de previsión
   - `recurrentes.ts`: ocurrencias mensuales, pendientes hasta confirmarlas.
   - `escenarios.ts`: simulaciones como diferencias sobre el plan base; aplicar y archivar.
   - `prevision.ts`: la grilla mes a mes (ingresos, egresos, disponible, reserva, deuda de tarjetas).
-- `src/app/`: interfaz (Next.js).
+- `src/lib/datos/`: lectura de Supabase y conversión al modelo del motor.
+- `src/app/`: interfaz (Next.js). Las páginas con sesión están en `src/app/(app)/`.
+- `supabase/migrations/`: tablas, permisos y políticas de acceso por hogar.
