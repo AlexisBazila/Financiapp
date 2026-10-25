@@ -34,7 +34,14 @@ export default async function Prevision() {
   return (
     <>
       <h1 className="mb-6 text-2xl font-semibold">Previsión</h1>
-      <VistaPrevision datos={datos} escenarios={escenarios} desde={desde} meses={meses} visibleDesde={visibleDesde} />
+      <VistaPrevision
+        datos={datos}
+        escenarios={escenarios}
+        desde={desde}
+        meses={meses}
+        visibleDesde={visibleDesde}
+        mesActual={mesActual}
+      />
     </>
   );
 }

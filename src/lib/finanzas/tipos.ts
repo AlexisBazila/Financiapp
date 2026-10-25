@@ -125,6 +125,24 @@ export interface Recurrente {
   requiereConfirmacion: boolean;
 }
 
+/**
+ * Monto planificado para un grupo de categorías, que se repite todos los meses de `desde` a `hasta`.
+ * Lo gastado en esas categorías se descuenta; lo que resta se prevé como gasto del mes.
+ */
+export interface Presupuesto {
+  id: string;
+  nombre: string;
+  icono: string;
+  monto: Centavos;
+  /** Cuenta de la que sale lo que resta del presupuesto. */
+  cuentaId: string;
+  desde: Mes;
+  /** Último mes; sin `hasta` se repite siempre. */
+  hasta?: Mes;
+  /** Categorías y subcategorías que cuentan (las subcategorías de una categoría ya incluidas). */
+  categoriaIds: string[];
+}
+
 /** Todo lo que el usuario carga. Los escenarios modifican una copia de esto. */
 export interface Datos {
   cuentas: Cuenta[];
@@ -132,6 +150,7 @@ export interface Datos {
   planesCuotas: PlanCuotas[];
   prestamos: Prestamo[];
   recurrentes: Recurrente[];
+  presupuestos?: Presupuesto[];
 }
 
 type Coleccion = "movimientos" | "planesCuotas" | "prestamos" | "recurrentes";

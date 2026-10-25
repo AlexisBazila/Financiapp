@@ -8,6 +8,7 @@ import type {
   Origen,
   PlanCuotas,
   Prestamo,
+  Presupuesto,
   Recurrente,
 } from "@/lib/finanzas/tipos";
 
@@ -186,5 +187,29 @@ export function aEscenario(fila: FilaEscenario): Escenario {
     padreId: fila.padre_id ?? undefined,
     estado: fila.estado,
     cambios: fila.cambios,
+  };
+}
+
+export interface FilaPresupuesto {
+  id: string;
+  nombre: string;
+  icono: string;
+  monto: number;
+  cuenta_id: string;
+  desde: string;
+  hasta: string | null;
+  categoria_ids: string[];
+}
+
+export function aPresupuesto(fila: FilaPresupuesto): Presupuesto {
+  return {
+    id: fila.id,
+    nombre: fila.nombre,
+    icono: fila.icono,
+    monto: Number(fila.monto),
+    cuentaId: fila.cuenta_id,
+    desde: fila.desde,
+    hasta: fila.hasta ?? undefined,
+    categoriaIds: fila.categoria_ids,
   };
 }
