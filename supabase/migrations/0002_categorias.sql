@@ -85,29 +85,29 @@ language plpgsql security definer set search_path = ''
 as $$
 declare
   cat jsonb;
-  sub text;
+  sub jsonb;
   nueva uuid;
   i int := 0;
   j int;
 begin
   for cat in select * from jsonb_array_elements($json$[
-    {"t":"egreso","n":"Alimentos","i":"🛒","c":"#16a34a","s":["Supermercado","Verdulería","Carnicería","Panadería","Lácteos y huevos","Dietética","Bebidas"]},
-    {"t":"egreso","n":"Hogar","i":"🏠","c":"#ea580c","s":["Alquiler y expensas","Mantenimiento y arreglos","Remodelaciones","Decoración","Electrodomésticos","Limpieza"]},
-    {"t":"egreso","n":"Servicios","i":"💡","c":"#ca8a04","s":["Luz","Gas","Agua","Internet","Telefonía","Suscripciones"]},
-    {"t":"egreso","n":"Auto y transporte","i":"🚗","c":"#2563eb","s":["Combustible","Seguro del auto","Taller y mantenimiento","Patente y peajes","Estacionamiento","Transporte público"]},
-    {"t":"egreso","n":"Salud","i":"🩺","c":"#dc2626","s":["Farmacia","Consultas médicas","Obra social o prepaga"]},
-    {"t":"egreso","n":"Ropa y cuidado personal","i":"👕","c":"#db2777","s":["Ropa y calzado","Belleza","Peluquería","Gimnasio"]},
-    {"t":"egreso","n":"Educación","i":"🎓","c":"#7c3aed","s":["Cursos","Inglés","Libros y materiales"]},
-    {"t":"egreso","n":"Ocio y salidas","i":"🎉","c":"#0891b2","s":["Restaurantes y delivery","Cafetería","Heladería","Viajes","Salidas"]},
-    {"t":"egreso","n":"Regalos y eventos","i":"🎁","c":"#e11d48","s":["Regalos","Celebraciones"]},
-    {"t":"egreso","n":"Seguros","i":"🛡️","c":"#475569","s":["Seguro de vida","Seguro viajero"]},
-    {"t":"egreso","n":"Finanzas","i":"💳","c":"#0f766e","s":["Cuotas de préstamos","Intereses","Comisiones bancarias","Impuestos"]},
-    {"t":"egreso","n":"Emprendimientos","i":"🧁","c":"#9333ea","s":["Insumos Delicias Luna","Insumos Bynailtica"]},
+    {"t":"egreso","n":"Alimentos","i":"🛒","c":"#16a34a","s":[["Supermercado","🛒"],["Verdulería","🥬"],["Carnicería","🥩"],["Panadería","🥖"],["Lácteos y huevos","🥛"],["Dietética","🌾"],["Bebidas","🥤"]]},
+    {"t":"egreso","n":"Hogar","i":"🏠","c":"#ea580c","s":[["Alquiler y expensas","🔑"],["Mantenimiento y arreglos","🔧"],["Remodelaciones","🧱"],["Decoración","🖼️"],["Electrodomésticos","🔌"],["Limpieza del hogar","🧽"]]},
+    {"t":"egreso","n":"Servicios","i":"💡","c":"#ca8a04","s":[["Luz","💡"],["Gas","🔥"],["Agua","💧"],["Internet","🌐"],["Telefonía","📱"],["Suscripciones","📺"]]},
+    {"t":"egreso","n":"Auto y transporte","i":"🚗","c":"#2563eb","s":[["Combustible","⛽"],["Seguro del auto","🛡️"],["Taller y mantenimiento","🔧"],["Patente y peajes","🧾"],["Estacionamiento","🅿️"],["Transporte público","🚌"]]},
+    {"t":"egreso","n":"Salud","i":"🩺","c":"#dc2626","s":[["Farmacia","💊"],["Consultas médicas","🏥"],["Obra social o prepaga","🪪"]]},
+    {"t":"egreso","n":"Ropa y cuidado personal","i":"👕","c":"#db2777","s":[["Ropa y calzado","👟"],["Belleza","💄"],["Peluquería","💈"],["Gimnasio","🏋️"]]},
+    {"t":"egreso","n":"Educación","i":"🎓","c":"#7c3aed","s":[["Cursos","📝"],["Inglés","🇬🇧"],["Libros y materiales","📚"]]},
+    {"t":"egreso","n":"Ocio y salidas","i":"🎉","c":"#0891b2","s":[["Restaurantes y delivery","🍔"],["Cafetería","☕"],["Heladería","🍦"],["Viajes","✈️"],["Salidas","🎬"]]},
+    {"t":"egreso","n":"Regalos y eventos","i":"🎁","c":"#e11d48","s":[["Regalos","🎁"],["Celebraciones","🎂"]]},
+    {"t":"egreso","n":"Seguros","i":"🛡️","c":"#475569","s":[["Seguro de vida","❤️"],["Seguro viajero","🧳"]]},
+    {"t":"egreso","n":"Finanzas","i":"💳","c":"#0f766e","s":[["Cuotas de préstamos","🏦"],["Intereses","📉"],["Comisiones bancarias","🧾"],["Impuestos","🏛️"]]},
+    {"t":"egreso","n":"Emprendimientos","i":"🧁","c":"#9333ea","s":[["Bynailtica","💅"],["AB System","💻"]]},
     {"t":"egreso","n":"Otros gastos","i":"📦","c":"#64748b","s":[]},
-    {"t":"ingreso","n":"Sueldo","i":"💼","c":"#15803d","s":["Sueldo","Aguinaldo","Premios y bonos","Viáticos"]},
-    {"t":"ingreso","n":"Emprendimientos","i":"🧁","c":"#9333ea","s":["Ventas Delicias Luna","Ventas Bynailtica"]},
-    {"t":"ingreso","n":"Rendimientos","i":"📈","c":"#0d9488","s":["Intereses y FCI","Dividendos"]},
-    {"t":"ingreso","n":"Reintegros","i":"↩️","c":"#0284c7","s":["Devoluciones","Descuentos y reintegros"]},
+    {"t":"ingreso","n":"Sueldo","i":"💼","c":"#15803d","s":[["Sueldo","💵"],["Aguinaldo","🎄"],["Premios y bonos","🏆"],["Viáticos","🚗"]]},
+    {"t":"ingreso","n":"Emprendimientos","i":"🧁","c":"#9333ea","s":[["Bynailtica","💅"],["AB System","💻"]]},
+    {"t":"ingreso","n":"Rendimientos","i":"📈","c":"#0d9488","s":[["Intereses y FCI","📈"],["Dividendos","💹"]]},
+    {"t":"ingreso","n":"Reintegros","i":"↩️","c":"#0284c7","s":[["Devoluciones","↩️"],["Descuentos y reintegros","🏷️"]]},
     {"t":"ingreso","n":"Otros ingresos","i":"➕","c":"#64748b","s":[]}
   ]$json$::jsonb) loop
     i := i + 1;
@@ -115,10 +115,11 @@ begin
     values (hogar, cat->>'n', cat->>'t', cat->>'i', cat->>'c', i)
     returning id into nueva;
     j := 0;
-    for sub in select * from jsonb_array_elements_text(cat->'s') loop
+    -- Cada subcategoría es [nombre, ícono].
+    for sub in select * from jsonb_array_elements(cat->'s') loop
       j := j + 1;
       insert into public.categorias (hogar_id, nombre, tipo, padre_id, icono, color, orden)
-      values (hogar, sub, cat->>'t', nueva, '', cat->>'c', j);
+      values (hogar, sub->>0, cat->>'t', nueva, sub->>1, cat->>'c', j);
     end loop;
   end loop;
 end;
