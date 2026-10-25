@@ -1,8 +1,10 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useId, useState } from "react";
+import type { Cuenta } from "@/lib/finanzas/tipos";
 import { boton, botonSecundario, campo, etiqueta } from "../../estilos";
-import { archivarCuenta, cambiarMesInicio, crearCuenta, guardarCiclo, type Resultado } from "./acciones";
+import { pesosExactos } from "../../formato";
+import { archivarCuenta, cambiarMesInicio, guardarCiclo, guardarCuenta, type Resultado } from "./acciones";
 
 function Mensaje({ estado, ok }: { estado: Resultado; ok: string }) {
   if (estado.error) return <p className="text-sm text-red-600">{estado.error}</p>;
@@ -10,16 +12,34 @@ function Mensaje({ estado, ok }: { estado: Resultado; ok: string }) {
   return null;
 }
 
-export function FormularioCuenta({ cuentasPago }: { cuentasPago: { id: string; nombre: string }[] }) {
-  const [estado, accion, pendiente] = useActionState(crearCuenta, {});
-  const [tipo, setTipo] = useState("banco");
+/** Alta de una cuenta, o edición si viene `inicial`. */
+export function FormularioCuenta({
+  cuentasPago,
+  titulares,
+  inicial,
+}: {
+  cuentasPago: { id: string; nombre: string }[];
+  /** Personas ya cargadas como titulares, para sugerir. */
+  titulares: string[];
+  inicial?: Cuenta;
+}) {
+  const [estado, accion, pendiente] = useActionState(guardarCuenta.bind(null, inicial?.id ?? null), {});
+  const [tipo, setTipo] = useState<string>(inicial?.tipo ?? "banco");
   const esTarjeta = tipo === "tarjeta";
+  const listaTitulares = useId();
+  const pagos = cuentasPago.filter((c) => c.id !== inicial?.id);
 
   return (
     <form action={accion} className="grid gap-4 sm:grid-cols-2">
       <label className={etiqueta}>
         Nombre
-        <input name="nombre" required placeholder="Caja de ahorro, Visa, Plazo fijo…" className={campo} />
+        <input
+          name="nombre"
+          required
+          defaultValue={inicial?.nombre}
+          placeholder="Caja de ahorro, Visa, Plazo fijo…"
+          className={campo}
+        />
       </label>
       <label className={etiqueta}>
         Tipo
@@ -33,13 +53,36 @@ export function FormularioCuenta({ cuentasPago }: { cuentasPago: { id: string; n
       </label>
       <label className={etiqueta}>
         {esTarjeta ? "Resumen ya cerrado a pagar ese mes ($)" : "Saldo al inicio del mes ($)"}
-        <input name="saldo" inputMode="decimal" placeholder="0" className={campo} />
+        <input
+          name="saldo"
+          inputMode="decimal"
+          placeholder="0"
+          defaultValue={inicial ? pesosExactos(inicial.saldoInicial) : undefined}
+          className={campo}
+        />
+      </label>
+      <label className={etiqueta}>
+        De quién es (opcional)
+        <input
+          name="titular"
+          list={listaTitulares}
+          maxLength={40}
+          autoComplete="off"
+          defaultValue={inicial?.titular}
+          placeholder="Alexis, Sol, compartida…"
+          className={campo}
+        />
+        <datalist id={listaTitulares}>
+          {titulares.map((t) => (
+            <option key={t} value={t} />
+          ))}
+        </datalist>
       </label>
       {esTarjeta ? (
         <label className={etiqueta}>
           Se paga desde
-          <select name="cuenta_pago_id" required className={campo}>
-            {cuentasPago.map((c) => (
+          <select name="cuenta_pago_id" required defaultValue={inicial?.tarjeta?.cuentaPagoId} className={campo}>
+            {pagos.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.nombre}
               </option>
@@ -49,7 +92,12 @@ export function FormularioCuenta({ cuentasPago }: { cuentasPago: { id: string; n
       ) : (
         <label className={etiqueta}>
           Disponibilidad
-          <select name="disponibilidad" defaultValue={tipo === "inversion" ? "48h" : "inmediata"} key={tipo} className={campo}>
+          <select
+            name="disponibilidad"
+            defaultValue={inicial?.tipo === tipo ? inicial.disponibilidad : tipo === "inversion" ? "48h" : "inmediata"}
+            key={tipo}
+            className={campo}
+          >
             <option value="inmediata">Disponible para gastar</option>
             <option value="48h">Disponible con espera (48 h)</option>
             <option value="reserva">Reserva de ahorro</option>
@@ -60,22 +108,38 @@ export function FormularioCuenta({ cuentasPago }: { cuentasPago: { id: string; n
         <>
           <label className={etiqueta}>
             Día de cierre habitual
-            <input name="dia_cierre" type="number" min={1} max={31} required className={campo} />
+            <input
+              name="dia_cierre"
+              type="number"
+              min={1}
+              max={31}
+              required
+              defaultValue={inicial?.tarjeta?.diaCierre}
+              className={campo}
+            />
           </label>
           <label className={etiqueta}>
             Día de vencimiento habitual
-            <input name="dia_vencimiento" type="number" min={1} max={31} required className={campo} />
+            <input
+              name="dia_vencimiento"
+              type="number"
+              min={1}
+              max={31}
+              required
+              defaultValue={inicial?.tarjeta?.diaVencimiento}
+              className={campo}
+            />
           </label>
         </>
       )}
-      {esTarjeta && cuentasPago.length === 0 && (
+      {esTarjeta && pagos.length === 0 && (
         <p className="text-sm text-red-600 sm:col-span-2">Primero cargá la cuenta desde la que pagás la tarjeta.</p>
       )}
       <div className="flex items-center gap-3 sm:col-span-2">
         <button type="submit" disabled={pendiente} className={boton}>
-          Agregar cuenta
+          {inicial ? "Guardar cambios" : "Agregar cuenta"}
         </button>
-        <Mensaje estado={estado} ok="Cuenta agregada." />
+        <Mensaje estado={estado} ok={inicial ? "Guardado." : "Cuenta agregada."} />
       </div>
     </form>
   );

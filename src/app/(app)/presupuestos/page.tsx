@@ -106,7 +106,10 @@ export default async function Presupuestos({ searchParams }: PageProps<"/presupu
                 })}
               </div>
               <p className={`text-xs ${textoSuave}`}>
-                Sale de {nombres.get(p.cuentaId)} ·{" "}
+                {p.cuentaIds
+                  ? `Gastos de ${p.cuentaIds.map((id) => nombres.get(id)).join(", ")}`
+                  : "Gastos de todas las cuentas"}{" "}
+                · lo que resta sale de {nombres.get(p.cuentaId)} ·{" "}
                 {p.hasta === p.desde
                   ? `solo ${nombreMes(p.desde)}`
                   : `todos los meses desde ${nombreMes(p.desde)}${p.hasta ? ` hasta ${nombreMes(p.hasta)}` : ""}`}

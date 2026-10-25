@@ -42,6 +42,8 @@ export interface Cuenta {
   disponibilidad: Disponibilidad;
   /** Saldo al inicio de la previsión. En una tarjeta es la deuda (positiva). */
   saldoInicial: Centavos;
+  /** Persona de la casa a la que pertenece. */
+  titular?: string;
   tarjeta?: ConfigTarjeta;
 }
 
@@ -146,6 +148,8 @@ export interface Presupuesto {
   hasta?: Mes;
   /** Categorías y subcategorías que cuentan (las subcategorías de una categoría ya incluidas). */
   categoriaIds: string[];
+  /** Cuentas cuyos gastos cuentan; sin `cuentaIds`, los de todas. */
+  cuentaIds?: string[];
 }
 
 /** Todo lo que el usuario carga. Los escenarios modifican una copia de esto. */
