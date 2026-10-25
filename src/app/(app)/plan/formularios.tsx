@@ -1,7 +1,9 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import type { Categoria } from "@/lib/datos/categorias";
 import { boton, campo, etiqueta } from "../../estilos";
+import { SelectorCategoria } from "../categorias/selector";
 import {
   borrar,
   confirmarRecurrente,
@@ -33,20 +35,6 @@ function SelectorCuenta({ cuentas, etiquetaTexto = "Cuenta" }: { cuentas: Opcion
           </option>
         ))}
       </select>
-    </label>
-  );
-}
-
-function Categoria({ categorias, placeholder }: { categorias: string[]; placeholder: string }) {
-  return (
-    <label className={etiqueta}>
-      Categoría
-      <input name="categoria" list="categorias-plan" placeholder={placeholder} className={campo} />
-      <datalist id="categorias-plan">
-        {categorias.map((c) => (
-          <option key={c} value={c} />
-        ))}
-      </datalist>
     </label>
   );
 }
@@ -87,7 +75,7 @@ export function FormularioCuotas({
   hoy,
 }: {
   cuentas: Opcion[];
-  categorias: string[];
+  categorias: Categoria[];
   hoy: string;
 }) {
   const [estado, accion, pendiente] = useActionState(crearPlanCuotas, {});
@@ -97,7 +85,7 @@ export function FormularioCuotas({
         Qué compraste
         <input name="descripcion" required placeholder="Heladera" className={campo} />
       </label>
-      <Categoria categorias={categorias} placeholder="Electrodomésticos" />
+      <SelectorCategoria categorias={categorias} tipo="egreso" />
       <SelectorCuenta cuentas={cuentas} etiquetaTexto="Pagado con" />
       <label className={etiqueta}>
         Fecha de compra
@@ -131,7 +119,17 @@ export function FormularioCuotas({
   );
 }
 
-export function FormularioPrestamo({ cuentas, hoy }: { cuentas: Opcion[]; hoy: string }) {
+export function FormularioPrestamo({
+  cuentas,
+  categorias,
+  categoriaSugerida,
+  hoy,
+}: {
+  cuentas: Opcion[];
+  categorias: Categoria[];
+  categoriaSugerida?: string;
+  hoy: string;
+}) {
   const [estado, accion, pendiente] = useActionState(crearPrestamo, {});
   const [sistema, setSistema] = useState("frances");
   const manual = sistema === "manual";
@@ -175,7 +173,7 @@ export function FormularioPrestamo({ cuentas, hoy }: { cuentas: Opcion[]; hoy: s
           </label>
         </>
       )}
-      <input type="hidden" name="categoria" value="Créditos" />
+      <SelectorCategoria categorias={categorias} tipo="egreso" valorInicial={categoriaSugerida} />
       <div className="flex items-center gap-3 sm:col-span-3">
         <button type="submit" disabled={pendiente || cuentas.length === 0} className={boton}>
           Agregar préstamo
@@ -192,7 +190,7 @@ export function FormularioRecurrente({
   mesActual,
 }: {
   cuentas: Opcion[];
-  categorias: string[];
+  categorias: Categoria[];
   mesActual: string;
 }) {
   const [estado, accion, pendiente] = useActionState(crearRecurrente, {});
@@ -210,7 +208,7 @@ export function FormularioRecurrente({
           <option value="egreso">Gasto</option>
         </select>
       </label>
-      <Categoria categorias={categorias} placeholder={tipo === "ingreso" ? "Sueldo" : "Hogar"} />
+      <SelectorCategoria key={tipo} categorias={categorias} tipo={tipo === "ingreso" ? "ingreso" : "egreso"} />
       <SelectorCuenta cuentas={cuentas} />
       <label className={etiqueta}>
         Monto estimado

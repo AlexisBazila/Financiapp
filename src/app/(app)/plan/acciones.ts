@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { categoriaElegida } from "@/lib/datos/categoria-elegida";
 import { entero, pesosACentavos, texto } from "@/lib/datos/formularios";
 import { requerirUsuario } from "@/lib/supabase/servidor";
 
@@ -46,10 +47,14 @@ export async function crearPlanCuotas(_: Resultado, form: FormData): Promise<Res
   if (tasaAnual === null) return { error: "La tasa tiene que ser un número." };
   const total = montoTotal(form, cantidad);
   if (!total) return { error: "El monto tiene que ser un número mayor a cero." };
+  const { supabase } = await requerirUsuario();
+  const categoria = await categoriaElegida(supabase, form, "egreso");
+  if ("error" in categoria) return categoria;
 
   return guardar("planes_cuotas", {
     descripcion,
-    categoria: texto(form, "categoria") || "Sin categoría",
+    categoria: categoria.categoria ?? "Sin categoría",
+    categoria_id: categoria.categoria_id,
     cuenta_id: texto(form, "cuenta_id"),
     fecha_compra: fechaCompra,
     monto_total: total,
@@ -67,10 +72,14 @@ export async function crearPrestamo(_: Resultado, form: FormData): Promise<Resul
   if (!["frances", "aleman", "manual"].includes(sistema)) return { error: "Elegí el sistema." };
   if (!FECHA.test(primeraCuota)) return { error: "Elegí la fecha de la primera cuota." };
   if (tasaAnual === null) return { error: "La tasa tiene que ser un número." };
+  const { supabase } = await requerirUsuario();
+  const categoria = await categoriaElegida(supabase, form, "egreso");
+  if ("error" in categoria) return categoria;
 
   const fila: Record<string, unknown> = {
     descripcion,
-    categoria: texto(form, "categoria") || "Créditos",
+    categoria: categoria.categoria ?? "Créditos",
+    categoria_id: categoria.categoria_id,
     cuenta_id: texto(form, "cuenta_id"),
     primera_cuota: primeraCuota,
     tasa_anual: tasaAnual,
@@ -109,11 +118,15 @@ export async function crearRecurrente(_: Resultado, form: FormData): Promise<Res
   if (!dia || dia > 31) return { error: "El día va del 1 al 31." };
   if (!MES.test(desde)) return { error: "Elegí desde qué mes." };
   if (hasta && (!MES.test(hasta) || hasta < desde)) return { error: "El mes final tiene que ser posterior al inicial." };
+  const { supabase } = await requerirUsuario();
+  const categoria = await categoriaElegida(supabase, form, tipo === "ingreso" ? "ingreso" : "egreso");
+  if ("error" in categoria) return categoria;
 
   return guardar("recurrentes", {
     descripcion,
     tipo,
-    categoria: texto(form, "categoria") || descripcion,
+    categoria: categoria.categoria ?? descripcion,
+    categoria_id: categoria.categoria_id,
     cuenta_id: texto(form, "cuenta_id"),
     monto_estimado: monto,
     dia_del_mes: dia,
@@ -138,7 +151,7 @@ export async function confirmarRecurrente(
 
   const { data: r, error: errorLectura } = await supabase
     .from("recurrentes")
-    .select("descripcion, tipo, categoria, cuenta_id")
+    .select("descripcion, tipo, categoria, categoria_id, cuenta_id")
     .eq("id", recurrenteId)
     .single();
   if (errorLectura || !r) return { error: "No se encontró el recurrente." };
@@ -150,6 +163,7 @@ export async function confirmarRecurrente(
     monto,
     cuenta_id: r.cuenta_id,
     categoria: r.categoria,
+    categoria_id: r.categoria_id,
     estado: "real",
     origen: { tipo: "recurrente", recurrenteId, mes },
   });

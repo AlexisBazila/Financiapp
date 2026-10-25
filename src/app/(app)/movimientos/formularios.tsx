@@ -1,7 +1,9 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import type { Categoria } from "@/lib/datos/categorias";
 import { boton, campo, etiqueta } from "../../estilos";
+import { SelectorCategoria } from "../categorias/selector";
 import { borrarMovimiento, crearMovimiento } from "./acciones";
 
 interface Opcion {
@@ -15,7 +17,7 @@ export function FormularioMovimiento({
   hoy,
 }: {
   cuentas: Opcion[];
-  categorias: string[];
+  categorias: Categoria[];
   hoy: string;
 }) {
   const [estado, accion, pendiente] = useActionState(crearMovimiento, {});
@@ -80,15 +82,7 @@ export function FormularioMovimiento({
           </select>
         </label>
       ) : (
-        <label className={etiqueta}>
-          Categoría
-          <input name="categoria" list="categorias" placeholder="Hogar, Automóvil…" className={campo} />
-          <datalist id="categorias">
-            {categorias.map((c) => (
-              <option key={c} value={c} />
-            ))}
-          </datalist>
-        </label>
+        <SelectorCategoria key={tipo} categorias={categorias} tipo={tipo === "ingreso" ? "ingreso" : "egreso"} />
       )}
       <label className={etiqueta}>
         Descripción

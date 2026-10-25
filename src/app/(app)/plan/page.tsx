@@ -26,20 +26,15 @@ function progreso(cuotas: Movimiento[], hoy: string): string {
 
 export default async function Plan() {
   const { supabase } = await requerirUsuario();
-  const { hogar, datos, cuentasActivas } = await cargarHogar(supabase);
+  const { hogar, datos, cuentasActivas, categorias: todas } = await cargarHogar(supabase);
   const hoy = hoyAR();
   const mesActual = mesDe(hoy);
   const cuentasPorId = new Map<string, Cuenta>(datos.cuentas.map((c) => [c.id, c]));
   const activas = datos.cuentas.filter((c) => cuentasActivas.includes(c.id));
   const opciones = activas.map((c) => ({ id: c.id, nombre: c.nombre }));
   const sinTarjetas = activas.filter((c) => !c.tarjeta).map((c) => ({ id: c.id, nombre: c.nombre }));
-  const categorias = [
-    ...new Set([
-      ...datos.movimientos.flatMap((m) => (m.categoria ? [m.categoria] : [])),
-      ...datos.planesCuotas.map((p) => p.categoria),
-      ...datos.recurrentes.map((r) => r.categoria),
-    ]),
-  ].sort();
+  const categorias = todas.filter((c) => !c.archivada);
+  const cuotasDePrestamos = categorias.find((c) => c.tipo === "egreso" && c.nombre === "Cuotas de préstamos")?.id;
 
   const pendientes = datos.recurrentes
     .filter((r) => r.requiereConfirmacion)
@@ -139,7 +134,12 @@ export default async function Plan() {
           </ul>
         )}
         <div className={`${caja} p-5`}>
-          <FormularioPrestamo cuentas={sinTarjetas} hoy={hoy} />
+          <FormularioPrestamo
+            cuentas={sinTarjetas}
+            categorias={categorias}
+            categoriaSugerida={cuotasDePrestamos}
+            hoy={hoy}
+          />
         </div>
       </section>
 

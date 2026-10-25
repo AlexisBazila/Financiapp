@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { categoriaElegida } from "@/lib/datos/categoria-elegida";
 import { pesosACentavos, texto } from "@/lib/datos/formularios";
 import { requerirUsuario } from "@/lib/supabase/servidor";
 
@@ -26,6 +27,11 @@ export async function crearMovimiento(_: Resultado, form: FormData): Promise<Res
     return { error: "Elegí una cuenta destino distinta de la de origen." };
   }
   if (!["real", "planificado"].includes(estado)) return { error: "Elegí si ya pasó o es planificado." };
+  const categoria =
+    tipo === "transferencia"
+      ? { categoria_id: null, categoria: null }
+      : await categoriaElegida(supabase, form, tipo === "ingreso" ? "ingreso" : "egreso");
+  if ("error" in categoria) return categoria;
 
   const { error } = await supabase.from("movimientos").insert({
     tipo,
@@ -33,7 +39,7 @@ export async function crearMovimiento(_: Resultado, form: FormData): Promise<Res
     monto,
     cuenta_id: cuentaId,
     cuenta_destino_id: tipo === "transferencia" ? destinoId : null,
-    categoria: tipo === "transferencia" ? null : texto(form, "categoria") || null,
+    ...categoria,
     descripcion: texto(form, "descripcion"),
     estado,
   });

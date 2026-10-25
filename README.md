@@ -7,7 +7,8 @@ y se pueden aplicar al plan.
 ## Estado
 
 Etapa 1 en curso: login, cuentas (con tarjetas y su cierre de cada mes), movimientos, compras en cuotas,
-préstamos, ingresos y gastos recurrentes (con confirmación mensual) y la previsión
+préstamos, ingresos y gastos recurrentes (con confirmación mensual), categorías con subcategorías, emoji
+y color, y la previsión
 con los datos guardados en Supabase. `/ejemplo` muestra la previsión con datos de muestra.
 
 ## Configurar Supabase y Vercel
@@ -38,6 +39,6 @@ npm test        # tests del motor de previsión
   - `recurrentes.ts`: ocurrencias mensuales, pendientes hasta confirmarlas.
   - `escenarios.ts`: simulaciones como diferencias sobre el plan base; aplicar y archivar.
   - `prevision.ts`: la grilla mes a mes (ingresos, egresos, disponible, reserva, deuda de tarjetas).
-- `src/lib/datos/`: lectura de Supabase y conversión al modelo del motor.
+- `src/lib/datos/`: lectura de Supabase, conversión al modelo del motor y categorías.
 - `src/app/`: interfaz (Next.js). Las páginas con sesión están en `src/app/(app)/`.
 - `supabase/migrations/`: tablas, permisos y políticas de acceso por hogar.
