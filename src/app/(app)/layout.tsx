@@ -6,6 +6,7 @@ import { salir } from "../login/acciones";
 const SECCIONES = [
   { href: "/", nombre: "Previsión" },
   { href: "/movimientos", nombre: "Movimientos" },
+  { href: "/plan", nombre: "Plan" },
   { href: "/cuentas", nombre: "Cuentas" },
 ];
 

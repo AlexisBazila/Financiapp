@@ -6,7 +6,8 @@ y se pueden aplicar al plan.
 
 ## Estado
 
-Etapa 1 en curso: login, cuentas (con tarjetas y su cierre de cada mes), movimientos y la previsión
+Etapa 1 en curso: login, cuentas (con tarjetas y su cierre de cada mes), movimientos, compras en cuotas,
+préstamos, ingresos y gastos recurrentes (con confirmación mensual) y la previsión
 con los datos guardados en Supabase. `/ejemplo` muestra la previsión con datos de muestra.
 
 ## Configurar Supabase y Vercel
