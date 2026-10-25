@@ -4,58 +4,63 @@ import { useMemo, useState } from "react";
 import { aplicarEscenario } from "@/lib/finanzas/escenarios";
 import { nombreMes } from "@/lib/finanzas/fechas";
 import { calcularPrevision, type MesPrevision } from "@/lib/finanzas/prevision";
-import type { Datos, Escenario } from "@/lib/finanzas/tipos";
-
-const formato = new Intl.NumberFormat("es-AR", { maximumFractionDigits: 0 });
-const pesos = (centavos: number) => formato.format(Math.round(centavos / 100));
+import type { Datos, Escenario, Mes } from "@/lib/finanzas/tipos";
+import { pesos } from "./formato";
 
 const BASE = "base";
 
 interface Props {
   datos: Datos;
   escenarios: Escenario[];
-  desde: string;
+  /** Mes de los saldos iniciales: la previsión se calcula desde acá. */
+  desde: Mes;
   meses: number;
+  /** Primer mes que se muestra; por defecto, `desde`. */
+  visibleDesde?: Mes;
 }
 
-export function VistaPrevision({ datos, escenarios, desde, meses }: Props) {
+export function VistaPrevision({ datos, escenarios: todos, desde, meses, visibleDesde = desde }: Props) {
+  const escenarios = useMemo(() => todos.filter((e) => e.estado === "activo"), [todos]);
   const [seleccionado, setSeleccionado] = useState(BASE);
 
   const previsiones = useMemo(() => {
     const opciones = { desde, meses };
-    const resultado: Record<string, MesPrevision[]> = { [BASE]: calcularPrevision(datos, opciones) };
+    const visibles = (p: MesPrevision[]) => p.filter((m) => m.mes >= visibleDesde);
+    const resultado: Record<string, MesPrevision[]> = { [BASE]: visibles(calcularPrevision(datos, opciones)) };
     for (const e of escenarios) {
-      resultado[e.id] = calcularPrevision(aplicarEscenario(datos, escenarios, e.id), opciones);
+      resultado[e.id] = visibles(calcularPrevision(aplicarEscenario(datos, todos, e.id), opciones));
     }
     return resultado;
-  }, [datos, escenarios, desde, meses]);
+  }, [datos, todos, escenarios, desde, meses, visibleDesde]);
 
   const prevision = previsiones[seleccionado];
   const opciones = [{ id: BASE, nombre: "Plan base" }, ...escenarios];
 
   return (
     <div className="flex flex-col gap-8">
-      <div className="flex flex-wrap gap-2" role="tablist" aria-label="Escenario">
-        {opciones.map((o) => (
-          <button
-            key={o.id}
-            role="tab"
-            aria-selected={o.id === seleccionado}
-            onClick={() => setSeleccionado(o.id)}
-            className={`rounded-full border px-4 py-1.5 text-sm transition-colors ${
-              o.id === seleccionado
-                ? "border-foreground bg-foreground text-background"
-                : "border-black/15 hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
-            }`}
-          >
-            {o.nombre}
-          </button>
-        ))}
-      </div>
+      {escenarios.length > 0 && (
+        <div className="flex flex-wrap gap-2" role="tablist" aria-label="Escenario">
+          {opciones.map((o) => (
+            <button
+              key={o.id}
+              role="tab"
+              aria-selected={o.id === seleccionado}
+              onClick={() => setSeleccionado(o.id)}
+              className={`rounded-full border px-4 py-1.5 text-sm transition-colors ${
+                o.id === seleccionado
+                  ? "border-foreground bg-foreground text-background"
+                  : "border-black/15 hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
+              }`}
+            >
+              {o.nombre}
+            </button>
+          ))}
+        </div>
+      )}
 
       <Resumen mes={prevision[0]} />
       <Grilla prevision={prevision} />
-      <Comparacion previsiones={previsiones} opciones={opciones} />
+      {escenarios.length > 0 && <Comparacion previsiones={previsiones} opciones={opciones} />}
     </div>
   );
 }
@@ -117,7 +122,10 @@ function Grilla({ prevision }: { prevision: MesPrevision[] }) {
   );
   const separador = (titulo: string) => (
     <tr key={`sep-${titulo}`}>
-      <th colSpan={prevision.length + 1} className={`${primera} pt-4 text-xs font-semibold uppercase tracking-wide text-black/50 dark:text-white/50`}>
+      <th
+        colSpan={prevision.length + 1}
+        className={`${primera} pt-4 text-xs font-semibold uppercase tracking-wide text-black/50 dark:text-white/50`}
+      >
         {titulo}
       </th>
     </tr>
@@ -141,17 +149,52 @@ function Grilla({ prevision }: { prevision: MesPrevision[] }) {
           </thead>
           <tbody>
             {separador("Ingresos")}
-            {ingresos.map((c) => fila(c, prevision.map((m) => m.ingresosPorCategoria[c] ?? 0)))}
-            {fila("Total ingresos", prevision.map((m) => m.ingresos), total)}
+            {ingresos.map((c) =>
+              fila(
+                c,
+                prevision.map((m) => m.ingresosPorCategoria[c] ?? 0),
+              ),
+            )}
+            {fila(
+              "Total ingresos",
+              prevision.map((m) => m.ingresos),
+              total,
+            )}
             {separador("Egresos")}
-            {egresos.map((c) => fila(c, prevision.map((m) => m.egresosPorCategoria[c] ?? 0)))}
-            {fila("Total egresos", prevision.map((m) => m.egresos), total)}
-            {fila("Resultado del mes", prevision.map((m) => m.neto), total)}
+            {egresos.map((c) =>
+              fila(
+                c,
+                prevision.map((m) => m.egresosPorCategoria[c] ?? 0),
+              ),
+            )}
+            {fila(
+              "Total egresos",
+              prevision.map((m) => m.egresos),
+              total,
+            )}
+            {fila(
+              "Resultado del mes",
+              prevision.map((m) => m.neto),
+              total,
+            )}
             {separador("Cuentas al cierre")}
-            {fila("Disponible", prevision.map((m) => m.disponible), "font-semibold")}
-            {fila("En 48 h", prevision.map((m) => m.disponible48h))}
-            {fila("Reserva", prevision.map((m) => m.reserva))}
-            {fila("Deuda tarjetas", prevision.map((m) => m.deudaTarjetas))}
+            {fila(
+              "Disponible",
+              prevision.map((m) => m.disponible),
+              "font-semibold",
+            )}
+            {fila(
+              "En 48 h",
+              prevision.map((m) => m.disponible48h),
+            )}
+            {fila(
+              "Reserva",
+              prevision.map((m) => m.reserva),
+            )}
+            {fila(
+              "Deuda tarjetas",
+              prevision.map((m) => m.deudaTarjetas),
+            )}
           </tbody>
         </table>
       </div>
@@ -203,7 +246,9 @@ function Comparacion({
                     <td key={m.mes} className={celda}>
                       <div className={m.disponible < 0 ? "text-red-600" : ""}>{pesos(m.disponible)}</div>
                       {o.id !== BASE && (
-                        <div className={`text-xs ${diferencia < 0 ? "text-red-600" : "text-black/50 dark:text-white/50"}`}>
+                        <div
+                          className={`text-xs ${diferencia < 0 ? "text-red-600" : "text-black/50 dark:text-white/50"}`}
+                        >
                           {diferencia === 0 ? "=" : `${diferencia > 0 ? "+" : ""}${pesos(diferencia)}`}
                         </div>
                       )}

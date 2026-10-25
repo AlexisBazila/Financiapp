@@ -38,3 +38,15 @@ export function nombreMes(mes: Mes): string {
   const [a, m] = mes.split("-").map(Number);
   return `${NOMBRES[m - 1]} ${String(a).slice(2)}`;
 }
+
+/** Fecha de hoy en Argentina. */
+export function hoy(): Fecha {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }).format(new Date());
+}
+
+/** Cantidad de meses de `desde` a `hasta` (0 si son el mismo). */
+export function mesesEntre(desde: Mes, hasta: Mes): number {
+  const [a1, m1] = desde.split("-").map(Number);
+  const [a2, m2] = hasta.split("-").map(Number);
+  return (a2 - a1) * 12 + (m2 - m1);
+}
