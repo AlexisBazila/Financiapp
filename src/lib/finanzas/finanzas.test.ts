@@ -128,6 +128,25 @@ describe("previsión", () => {
     expect(nov.deudaTarjetas).toBe(0);
   });
 
+  it("no cuenta dos veces lo que ya está en el saldo inicial de la tarjeta", () => {
+    const datos = vacio();
+    datos.cuentas = [banco, ahorro, { ...visa, saldoInicial: 300_000_00 }];
+    datos.movimientos.push({
+      id: "octubre",
+      fecha: "2026-10-10", // resumen de octubre: cierra el 25/10 y se paga en noviembre
+      descripcion: "Compra de octubre",
+      tipo: "egreso",
+      monto: 50_000_00,
+      cuentaId: "visa",
+      categoria: "Varios",
+      estado: "real",
+      origen: { tipo: "manual" },
+    });
+    const [nov] = calcularPrevision(datos, { desde: "2026-11", meses: 1 });
+    expect(nov.egresos).toBe(300_000_00);
+    expect(nov.deudaTarjetas).toBe(0);
+  });
+
   it("separa el ahorro reservado de lo disponible", () => {
     const datos = vacio();
     datos.cuentas = [{ ...banco, saldoInicial: 1_000_000_00 }, ahorro, visa];

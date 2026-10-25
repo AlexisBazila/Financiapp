@@ -61,7 +61,7 @@ interface Efecto {
   flujo?: { tipo: "ingreso" | "egreso"; categoria: string; monto: Centavos };
 }
 
-function efectosDe(mov: Movimiento, cuentas: Map<string, Cuenta>): Efecto[] {
+function efectosDe(mov: Movimiento, cuentas: Map<string, Cuenta>, desde: Mes): Efecto[] {
   const cuenta = cuentas.get(mov.cuentaId);
   if (!cuenta) throw new Error(`No existe la cuenta ${mov.cuentaId}`);
   const categoria = mov.categoria ?? "Sin categoría";
@@ -93,6 +93,8 @@ function efectosDe(mov: Movimiento, cuentas: Map<string, Cuenta>): Efecto[] {
 
   // Tarjeta: la deuda sube al cierre del resumen y la plata sale al vencimiento.
   const ciclo = cicloDe(cuenta, mov.mesResumen ?? resumenDeFecha(cuenta, mov.fecha));
+  // Un resumen que cerró antes de `desde` ya está incluido en el saldo inicial de la tarjeta.
+  if (mesDe(ciclo.cierre) < desde) return [];
   const mesPago = mesDe(ciclo.vencimiento);
   return [
     { mes: mesDe(ciclo.cierre), cuentaId: cuenta.id, delta: -signo * mov.monto },
@@ -111,7 +113,8 @@ function efectosDe(mov: Movimiento, cuentas: Map<string, Cuenta>): Efecto[] {
  * tarjeta cuentan el mes en que se paga el resumen) y cómo quedan las cuentas al final de cada mes.
  *
  * Los saldos iniciales de las cuentas son los del comienzo de `desde`; los movimientos anteriores
- * se ignoran. El saldo inicial de una tarjeta se toma como un resumen ya cerrado que se paga en `desde`.
+ * se ignoran. El saldo inicial de una tarjeta se toma como el resumen ya cerrado que se paga en `desde`,
+ * así que las compras de resúmenes cerrados antes de `desde` no se vuelven a contar.
  */
 export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): MesPrevision[] {
   const meses = rangoMeses(opciones.desde, opciones.meses);
@@ -120,7 +123,7 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
   const cuentas = new Map(datos.cuentas.map((c) => [c.id, c]));
 
   const movimientos = expandir(datos, opciones.desde, hasta).filter((m) => estados.has(m.estado));
-  const efectos: Efecto[] = movimientos.flatMap((m) => efectosDe(m, cuentas));
+  const efectos: Efecto[] = movimientos.flatMap((m) => efectosDe(m, cuentas, opciones.desde));
 
   for (const c of datos.cuentas) {
     if (c.tarjeta && c.saldoInicial > 0) {
