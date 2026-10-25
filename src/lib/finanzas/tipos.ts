@@ -75,6 +75,8 @@ export interface Movimiento {
   origen: Origen;
   /** Solo en compras con tarjeta: resumen en el que cae, si ya se conoce. */
   mesResumen?: Mes;
+  /** Chequeado contra el extracto del banco o la tarjeta. No cambia la previsión. */
+  conciliado?: boolean;
 }
 
 export interface PlanCuotas {

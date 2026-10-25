@@ -43,6 +43,7 @@ export interface FilaMovimiento {
   estado: Movimiento["estado"];
   origen: Origen;
   mes_resumen: string | null;
+  conciliado: boolean;
 }
 
 export interface FilaPlanCuotas {
@@ -128,6 +129,7 @@ export function aMovimiento(fila: FilaMovimiento): Movimiento {
     estado: fila.estado,
     origen: fila.origen,
     mesResumen: fila.mes_resumen ?? undefined,
+    conciliado: fila.conciliado,
   };
 }
 

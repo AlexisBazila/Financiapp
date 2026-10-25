@@ -26,6 +26,10 @@ export interface MesPrevision {
   deudaTarjetas: Centavos;
   /** Ocurrencias de recurrentes que esperan confirmación en este mes. */
   pendientes: number;
+  /** Cuotas de compras y préstamos que se pagan este mes. */
+  cuotasDelMes: Centavos;
+  /** Lo que queda por pagar en cuotas después de este mes. */
+  deudaCuotas: Centavos;
 }
 
 export interface OpcionesPrevision {
@@ -35,7 +39,17 @@ export interface OpcionesPrevision {
   estados?: Estado[];
 }
 
-/** Todos los movimientos del período: los cargados más los que generan cuotas, préstamos y recurrentes. */
+/** Clave de una cuota generada, para reconocerla cuando ya se cargó (confirmada o editada). */
+function claveCuota(origen: Movimiento["origen"]): string | undefined {
+  if (origen.tipo === "cuotas") return `cuotas:${origen.planId}:${origen.numero}`;
+  if (origen.tipo === "prestamo") return `prestamo:${origen.prestamoId}:${origen.numero}`;
+  return undefined;
+}
+
+/**
+ * Todos los movimientos del período: los cargados más los que generan cuotas, préstamos y recurrentes.
+ * Una cuota o un recurrente que ya se cargó (al confirmarlo o editarlo) reemplaza al generado.
+ */
 export function expandir(datos: Datos, desde: Mes, hasta: Mes): Movimiento[] {
   const cuentas = new Map(datos.cuentas.map((c) => [c.id, c]));
   const cuenta = (id: string) => {
@@ -43,12 +57,21 @@ export function expandir(datos: Datos, desde: Mes, hasta: Mes): Movimiento[] {
     if (!c) throw new Error(`No existe la cuenta ${id}`);
     return c;
   };
+  const cargadas = new Set(datos.movimientos.map((m) => claveCuota(m.origen)).filter(Boolean));
+  const sinCargar = (m: Movimiento) => !cargadas.has(claveCuota(m.origen));
   return [
     ...datos.movimientos,
-    ...datos.planesCuotas.flatMap((p) => generarCuotasPlan(p, cuenta(p.cuentaId))),
-    ...datos.prestamos.flatMap(generarCuotasPrestamo),
+    ...datos.planesCuotas.flatMap((p) => generarCuotasPlan(p, cuenta(p.cuentaId))).filter(sinCargar),
+    ...datos.prestamos.flatMap(generarCuotasPrestamo).filter(sinCargar),
     ...datos.recurrentes.flatMap((r) => instanciarRecurrente(r, datos.movimientos, desde, hasta)),
   ];
+}
+
+/** Mes en que sale la plata de un movimiento: el del vencimiento del resumen si es con tarjeta. */
+export function mesDePago(mov: Movimiento, cuentas: Map<string, Cuenta>): Mes {
+  const cuenta = cuentas.get(mov.cuentaId);
+  if (!cuenta?.tarjeta || mov.tipo === "transferencia") return mesDe(mov.fecha);
+  return mesDe(cicloDe(cuenta, mov.mesResumen ?? resumenDeFecha(cuenta, mov.fecha)).vencimiento);
 }
 
 /** Un efecto de un movimiento sobre una cuenta en un mes. */
@@ -122,7 +145,8 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
   const estados = new Set(opciones.estados ?? ["real", "planificado", "pendiente"]);
   const cuentas = new Map(datos.cuentas.map((c) => [c.id, c]));
 
-  const movimientos = expandir(datos, opciones.desde, hasta).filter((m) => estados.has(m.estado));
+  const todos = expandir(datos, opciones.desde, hasta);
+  const movimientos = todos.filter((m) => estados.has(m.estado));
   const efectos: Efecto[] = movimientos.flatMap((m) => efectosDe(m, cuentas, opciones.desde));
 
   for (const c of datos.cuentas) {
@@ -149,6 +173,17 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
       pendientesPorMes.set(mes, (pendientesPorMes.get(mes) ?? 0) + 1);
     }
   }
+
+  // Cuotas por mes de pago, para la deuda en cuotas (se cuentan aunque se filtre por estado).
+  const cuotasPorMes = new Map<Mes, Centavos>();
+  for (const m of todos) {
+    if (claveCuota(m.origen) && m.tipo === "egreso") {
+      const mes = mesDePago(m, cuentas);
+      cuotasPorMes.set(mes, (cuotasPorMes.get(mes) ?? 0) + m.monto);
+    }
+  }
+  const cuotasDespuesDe = (mes: Mes) =>
+    [...cuotasPorMes].reduce((total, [m, monto]) => (m > mes ? total + monto : total), 0);
 
   const saldos: Record<string, Centavos> = Object.fromEntries(datos.cuentas.map((c) => [c.id, c.saldoInicial]));
 
@@ -195,6 +230,8 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
       reserva,
       deudaTarjetas,
       pendientes: pendientesPorMes.get(mes) ?? 0,
+      cuotasDelMes: cuotasPorMes.get(mes) ?? 0,
+      deudaCuotas: cuotasDespuesDe(mes),
     };
   });
 }
