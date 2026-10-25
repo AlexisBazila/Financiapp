@@ -21,6 +21,8 @@ export async function guardarPresupuesto(id: string | null, _: Resultado, form: 
   const repite = form.get("repite") === "on";
   const hasta = repite ? texto(form, "hasta") : desde;
   const categoriaIds = form.getAll("categoria_ids").filter((v): v is string => typeof v === "string" && v !== "");
+  const algunas = texto(form, "cuentas") === "algunas";
+  const cuentaIds = form.getAll("cuenta_ids").filter((v): v is string => typeof v === "string" && v !== "");
 
   if (!nombre || nombre.length > 60) return { error: "Poné un nombre de hasta 60 letras." };
   if ([...icono].length > 4) return { error: "El ícono tiene que ser un solo emoji." };
@@ -29,6 +31,7 @@ export async function guardarPresupuesto(id: string | null, _: Resultado, form: 
   if (!MES.test(desde)) return { error: "Elegí desde qué mes." };
   if (hasta && (!MES.test(hasta) || hasta < desde)) return { error: "El mes final tiene que ser posterior al inicial." };
   if (categoriaIds.length === 0) return { error: "Elegí al menos una categoría." };
+  if (algunas && cuentaIds.length === 0) return { error: "Elegí al menos una cuenta, o marcá todas." };
 
   const fila = {
     nombre,
@@ -38,6 +41,7 @@ export async function guardarPresupuesto(id: string | null, _: Resultado, form: 
     desde,
     hasta: hasta || null,
     categoria_ids: categoriaIds,
+    cuenta_ids: algunas ? cuentaIds : null,
   };
   const { error } = id
     ? await supabase.from("presupuestos").update(fila).eq("id", id)

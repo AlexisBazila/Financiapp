@@ -53,6 +53,7 @@ export default async function Cuenta({ params, searchParams }: PageProps<"/cuent
             ← Cuentas
           </Link>
           <h1 className="text-2xl font-semibold">{cuenta.nombre}</h1>
+          {cuenta.titular && <p className={`text-sm ${textoSuave}`}>👤 {cuenta.titular}</p>}
         </div>
         {opciones.cuentas.length > 0 && (
           <NuevoMovimiento {...opciones} fechaSugerida={mes === actual ? hoy() : `${mes}-01`} />

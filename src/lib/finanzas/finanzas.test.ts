@@ -86,6 +86,8 @@ describe("tarjeta", () => {
     expect(resumenDeFecha(visa, "2026-10-25")).toBe("2026-10");
     expect(resumenDeFecha(visa, "2026-10-26")).toBe("2026-11");
     expect(resumenDeFecha(visa, "2026-11-21")).toBe("2026-12");
+    // Comprado el día del cierre entra en ese resumen; al día siguiente, en el del mes que viene.
+    expect(resumenDeFecha(visa, "2026-11-20")).toBe("2026-11");
   });
 });
 
@@ -316,6 +318,18 @@ describe("presupuestos", () => {
     expect(nov.egresos).toBe(1_200_000_00 + 70_000_00);
     expect(nov.egresosPorCategoria[categoriaResto(viveres)]).toBe(1_050_000_00);
     expect(dic.presupuestos[0].resto).toBe(1_200_000_00);
+  });
+
+  it("con cuentas elegidas, solo cuenta lo gastado desde esas cuentas", () => {
+    const enVisa = { ...gasto("super-visa", "2026-11-08", 40_000_00, "super"), cuentaId: "visa" };
+    const movimientos = [gasto("super", "2026-11-05", 100_000_00, "super"), enVisa];
+    const todas = calcularPrevision({ ...vacio(), presupuestos: [viveres], movimientos }, { desde: "2026-11", meses: 1 });
+    expect(todas[0].presupuestos[0].gastado).toBe(140_000_00);
+    const soloBanco = calcularPrevision(
+      { ...vacio(), presupuestos: [{ ...viveres, cuentaIds: ["banco"] }], movimientos },
+      { desde: "2026-11", meses: 1 },
+    );
+    expect(soloBanco[0].presupuestos[0].gastado).toBe(100_000_00);
   });
 
   it("si se pasa, el resto es negativo y no suma gasto", () => {

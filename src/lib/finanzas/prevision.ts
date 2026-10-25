@@ -311,8 +311,16 @@ export function categoriaResto(p: Pick<Presupuesto, "icono" | "nombre">): string
 
 function resumenPresupuesto(p: Presupuesto, mes: Mes, movimientos: Movimiento[]): MesPresupuesto {
   const categorias = new Set(p.categoriaIds);
+  const cuentas = p.cuentaIds && new Set(p.cuentaIds);
   const gastado = movimientos
-    .filter((m) => m.tipo === "egreso" && m.categoriaId && categorias.has(m.categoriaId) && mesDe(m.fecha) === mes)
+    .filter(
+      (m) =>
+        m.tipo === "egreso" &&
+        m.categoriaId &&
+        categorias.has(m.categoriaId) &&
+        (!cuentas || cuentas.has(m.cuentaId)) &&
+        mesDe(m.fecha) === mes,
+    )
     .reduce((total, m) => total + m.monto, 0);
   return { id: p.id, nombre: p.nombre, monto: p.monto, gastado, resto: p.monto - gastado };
 }

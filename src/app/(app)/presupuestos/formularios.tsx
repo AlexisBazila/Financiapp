@@ -64,6 +64,42 @@ function ElegirCategorias({ categorias, iniciales }: { categorias: Categoria[]; 
   );
 }
 
+/** Gastos de qué cuentas cuentan: todas, o las que se marquen. */
+function ElegirCuentas({ cuentas, iniciales }: { cuentas: Opcion[]; iniciales?: string[] }) {
+  const [algunas, setAlgunas] = useState(Boolean(iniciales));
+  return (
+    <fieldset className="flex flex-col gap-2 text-sm sm:col-span-3">
+      <legend className="mb-1">Gastos que cuentan</legend>
+      <div className="flex flex-wrap gap-x-5 gap-y-2">
+        <label className="flex items-center gap-2">
+          <input type="radio" name="cuentas" value="todas" checked={!algunas} onChange={() => setAlgunas(false)} />
+          De todas las cuentas
+        </label>
+        <label className="flex items-center gap-2">
+          <input type="radio" name="cuentas" value="algunas" checked={algunas} onChange={() => setAlgunas(true)} />
+          Solo de algunas cuentas
+        </label>
+      </div>
+      {algunas && (
+        <div className="ml-6 flex flex-wrap gap-x-5 gap-y-2">
+          {cuentas.map((c) => (
+            <label key={c.id} className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                name="cuenta_ids"
+                value={c.id}
+                defaultChecked={iniciales?.includes(c.id)}
+                className="size-4"
+              />
+              {c.nombre}
+            </label>
+          ))}
+        </div>
+      )}
+    </fieldset>
+  );
+}
+
 export function FormularioPresupuesto({
   cuentas,
   categorias,
@@ -102,7 +138,7 @@ export function FormularioPresupuesto({
         />
       </label>
       <label className={etiqueta}>
-        Sale de
+        Lo que resta sale de
         <select name="cuenta_id" required defaultValue={inicial?.cuentaId} className={campo}>
           {cuentas.map((c) => (
             <option key={c.id} value={c.id}>
@@ -126,6 +162,7 @@ export function FormularioPresupuesto({
         </label>
       )}
       <ElegirCategorias categorias={categorias} iniciales={inicial?.categoriaIds ?? []} />
+      <ElegirCuentas cuentas={cuentas} iniciales={inicial?.cuentaIds} />
       <div className="flex flex-wrap items-center gap-3 sm:col-span-3">
         <button type="submit" disabled={pendiente || cuentas.length === 0} className={boton}>
           {inicial ? "Guardar cambios" : "Crear presupuesto"}

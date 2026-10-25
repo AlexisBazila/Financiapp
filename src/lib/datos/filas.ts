@@ -22,6 +22,7 @@ export interface FilaCuenta {
   dia_vencimiento: number | null;
   cuenta_pago_id: string | null;
   archivada: boolean;
+  titular: string | null;
 }
 
 export interface FilaCiclo {
@@ -106,6 +107,7 @@ export function aCuenta(fila: FilaCuenta, ciclos: FilaCiclo[]): Cuenta {
     tipo: fila.tipo,
     disponibilidad: fila.disponibilidad,
     saldoInicial: Number(fila.saldo_inicial),
+    titular: fila.titular ?? undefined,
   };
   if (fila.tipo === "tarjeta" && fila.dia_cierre && fila.dia_vencimiento && fila.cuenta_pago_id) {
     cuenta.tarjeta = {
@@ -207,6 +209,7 @@ export interface FilaPresupuesto {
   desde: string;
   hasta: string | null;
   categoria_ids: string[];
+  cuenta_ids: string[] | null;
 }
 
 export function aPresupuesto(fila: FilaPresupuesto): Presupuesto {
@@ -219,5 +222,6 @@ export function aPresupuesto(fila: FilaPresupuesto): Presupuesto {
     desde: fila.desde,
     hasta: fila.hasta ?? undefined,
     categoriaIds: fila.categoria_ids,
+    cuentaIds: fila.cuenta_ids ?? undefined,
   };
 }

@@ -12,7 +12,8 @@ export interface Resultado {
 const TIPOS = ["efectivo", "banco", "billetera", "inversion", "tarjeta"];
 const DISPONIBILIDADES = ["inmediata", "48h", "reserva"];
 
-export async function crearCuenta(_: Resultado, form: FormData): Promise<Resultado> {
+/** Crea una cuenta (`id` null) o cambia una existente. */
+export async function guardarCuenta(id: string | null, _: Resultado, form: FormData): Promise<Resultado> {
   const { supabase } = await requerirUsuario();
   const nombre = texto(form, "nombre");
   const tipo = texto(form, "tipo");
@@ -25,7 +26,17 @@ export async function crearCuenta(_: Resultado, form: FormData): Promise<Resulta
   const disponibilidad = esTarjeta ? "inmediata" : texto(form, "disponibilidad");
   if (!DISPONIBILIDADES.includes(disponibilidad)) return { error: "Elegí la disponibilidad." };
 
-  const fila: Record<string, unknown> = { nombre, tipo, disponibilidad, saldo_inicial: saldo };
+  const titular = texto(form, "titular").slice(0, 40) || null;
+  const fila: Record<string, unknown> = {
+    nombre,
+    tipo,
+    disponibilidad,
+    saldo_inicial: saldo,
+    titular,
+    dia_cierre: null,
+    dia_vencimiento: null,
+    cuenta_pago_id: null,
+  };
   if (esTarjeta) {
     const diaCierre = entero(form, "dia_cierre");
     const diaVencimiento = entero(form, "dia_vencimiento");
@@ -33,11 +44,22 @@ export async function crearCuenta(_: Resultado, form: FormData): Promise<Resulta
     if (!diaCierre || diaCierre > 31 || !diaVencimiento || diaVencimiento > 31) {
       return { error: "Los días de cierre y vencimiento van del 1 al 31." };
     }
-    if (!cuentaPago) return { error: "Elegí desde qué cuenta pagás la tarjeta." };
+    if (!cuentaPago || cuentaPago === id) return { error: "Elegí desde qué cuenta pagás la tarjeta." };
     Object.assign(fila, { dia_cierre: diaCierre, dia_vencimiento: diaVencimiento, cuenta_pago_id: cuentaPago });
   }
 
-  const { error } = await supabase.from("cuentas").insert(fila);
+  if (id && esTarjeta) {
+    const { count } = await supabase
+      .from("cuentas")
+      .select("id", { count: "exact", head: true })
+      .eq("cuenta_pago_id", id)
+      .eq("archivada", false);
+    if (count) return { error: "Con esta cuenta se paga una tarjeta; no puede ser una tarjeta." };
+  }
+
+  const { error } = id
+    ? await supabase.from("cuentas").update(fila).eq("id", id)
+    : await supabase.from("cuentas").insert(fila);
   if (error) return { error: `No se pudo guardar: ${error.message}` };
   revalidatePath("/", "layout");
   return { ok: true };
