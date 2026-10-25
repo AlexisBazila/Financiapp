@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { categoriaElegida } from "@/lib/datos/categoria-elegida";
 import { pesosACentavos, texto } from "@/lib/datos/formularios";
+import type { Movimiento, Origen } from "@/lib/finanzas/tipos";
 import { requerirUsuario } from "@/lib/supabase/servidor";
 
 export interface Resultado {
@@ -10,7 +11,22 @@ export interface Resultado {
   ok?: boolean;
 }
 
-export async function crearMovimiento(_: Resultado, form: FormData): Promise<Resultado> {
+/**
+ * Qué se está guardando: un movimiento ya cargado (`id`), uno generado por una cuota o un recurrente
+ * que todavía no se cargó (`origen`), o uno nuevo (nada).
+ */
+export interface Base {
+  id?: string;
+  origen?: Origen;
+  mesResumen?: string;
+}
+
+function mensaje(error: { code?: string; message: string }): string {
+  if (error.code === "23505") return "Ese movimiento ya estaba cargado; recargá la página.";
+  return `No se pudo guardar: ${error.message}`;
+}
+
+export async function guardarMovimiento(base: Base | null, _: Resultado, form: FormData): Promise<Resultado> {
   const { supabase } = await requerirUsuario();
   const tipo = texto(form, "tipo");
   const fecha = texto(form, "fecha");
@@ -33,7 +49,7 @@ export async function crearMovimiento(_: Resultado, form: FormData): Promise<Res
       : await categoriaElegida(supabase, form, tipo === "ingreso" ? "ingreso" : "egreso");
   if ("error" in categoria) return categoria;
 
-  const { error } = await supabase.from("movimientos").insert({
+  const fila = {
     tipo,
     fecha,
     monto,
@@ -42,10 +58,43 @@ export async function crearMovimiento(_: Resultado, form: FormData): Promise<Res
     ...categoria,
     descripcion: texto(form, "descripcion"),
     estado,
-  });
-  if (error) return { error: `No se pudo guardar: ${error.message}` };
+    // Lo que no pasó todavía no puede estar conciliado.
+    ...(estado === "real" ? {} : { conciliado: false }),
+  };
+  const { error } = base?.id
+    ? await supabase.from("movimientos").update(fila).eq("id", base.id)
+    : await supabase
+        .from("movimientos")
+        .insert({ ...fila, origen: base?.origen ?? { tipo: "manual" }, mes_resumen: base?.mesResumen ?? null });
+  if (error) return { error: mensaje(error) };
   revalidatePath("/", "layout");
   return { ok: true };
+}
+
+/**
+ * Confirma un movimiento (pasa a real) o cambia su conciliación. Si es una cuota o un recurrente que
+ * todavía no se cargó, lo guarda.
+ */
+export async function marcar(mov: Movimiento, guardado: boolean, cambio: { conciliado?: boolean }) {
+  const { supabase } = await requerirUsuario();
+  const marcas = { estado: "real", ...(cambio.conciliado === undefined ? {} : { conciliado: cambio.conciliado }) };
+  const { error } = guardado
+    ? await supabase.from("movimientos").update(marcas).eq("id", mov.id)
+    : await supabase.from("movimientos").insert({
+        fecha: mov.fecha,
+        descripcion: mov.descripcion,
+        tipo: mov.tipo,
+        monto: mov.monto,
+        cuenta_id: mov.cuentaId,
+        cuenta_destino_id: mov.cuentaDestinoId ?? null,
+        categoria: mov.categoria ?? null,
+        categoria_id: mov.categoriaId ?? null,
+        origen: mov.origen,
+        mes_resumen: mov.mesResumen ?? null,
+        ...marcas,
+      });
+  if (error) throw new Error(mensaje(error));
+  revalidatePath("/", "layout");
 }
 
 export async function borrarMovimiento(id: string) {

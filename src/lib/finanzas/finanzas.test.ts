@@ -186,6 +186,32 @@ describe("previsión", () => {
     expect(conTodo.pendientes).toBe(1);
     expect(soloReal.ingresos).toBe(0);
   });
+
+  const tele: PlanCuotas = {
+    id: "tele",
+    descripcion: "Tele",
+    categoria: "Hogar",
+    cuentaId: "visa",
+    fechaCompra: "2026-11-22", // resumen de diciembre: se paga en enero
+    montoTotal: 300_000_00,
+    cantidad: 3,
+  };
+
+  it("suma lo que queda por pagar en cuotas", () => {
+    const datos = { ...vacio(), planesCuotas: [tele] };
+    const p = calcularPrevision(datos, { desde: "2026-11", meses: 5 });
+    expect(p.map((m) => m.cuotasDelMes)).toEqual([0, 0, 100_000_00, 100_000_00, 100_000_00]);
+    expect(p.map((m) => m.deudaCuotas)).toEqual([300_000_00, 300_000_00, 200_000_00, 100_000_00, 0]);
+  });
+
+  it("una cuota confirmada reemplaza a la generada", () => {
+    const [primera] = generarCuotasPlan(tele, visa);
+    const confirmada = { ...primera, id: "uuid-1", estado: "real" as const, monto: 99_000_00, conciliado: true };
+    const datos = { ...vacio(), planesCuotas: [tele], movimientos: [confirmada] };
+    const p = calcularPrevision(datos, { desde: "2026-11", meses: 5 });
+    expect(p[2].egresos).toBe(99_000_00);
+    expect(p[0].deudaCuotas).toBe(299_000_00);
+  });
 });
 
 describe("escenarios", () => {

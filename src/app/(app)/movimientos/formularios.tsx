@@ -1,32 +1,53 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useOptimistic, useRef, useState, useTransition } from "react";
 import type { Categoria } from "@/lib/datos/categorias";
-import { boton, campo, etiqueta } from "../../estilos";
+import type { Movimiento } from "@/lib/finanzas/tipos";
+import { boton, botonSecundario, campo, etiqueta } from "../../estilos";
+import { pesosExactos } from "../../formato";
 import { SelectorCategoria } from "../categorias/selector";
-import { borrarMovimiento, crearMovimiento } from "./acciones";
+import { borrarMovimiento, guardarMovimiento, marcar, type Base } from "./acciones";
 
 interface Opcion {
   id: string;
   nombre: string;
 }
 
-export function FormularioMovimiento({
-  cuentas,
-  categorias,
-  hoy,
-}: {
+export interface Opciones {
   cuentas: Opcion[];
   categorias: Categoria[];
-  hoy: string;
+}
+
+function FormularioMovimiento({
+  cuentas,
+  categorias,
+  fechaSugerida,
+  base,
+  inicial,
+  alGuardar,
+  alCancelar,
+}: Opciones & {
+  fechaSugerida: string;
+  base?: Base;
+  inicial?: Movimiento;
+  alGuardar: () => void;
+  alCancelar: () => void;
 }) {
-  const [estado, accion, pendiente] = useActionState(crearMovimiento, {});
-  const [tipo, setTipo] = useState("egreso");
+  const [estado, accion, pendiente] = useActionState(guardarMovimiento.bind(null, base ?? null), {});
+  const [tipo, setTipo] = useState<string>(inicial?.tipo ?? "egreso");
   const esTransferencia = tipo === "transferencia";
+
+  const alGuardarActual = useRef(alGuardar);
+  useEffect(() => {
+    alGuardarActual.current = alGuardar;
+  });
+  useEffect(() => {
+    if (estado.ok) alGuardarActual.current();
+  }, [estado]);
 
   return (
     <form action={accion} className="grid gap-4 sm:grid-cols-3">
-      <div className="flex gap-2 sm:col-span-3" role="radiogroup" aria-label="Tipo">
+      <div className="flex flex-wrap gap-2 sm:col-span-3" role="radiogroup" aria-label="Tipo">
         {[
           ["egreso", "Gasto"],
           ["ingreso", "Ingreso"],
@@ -54,15 +75,22 @@ export function FormularioMovimiento({
       </div>
       <label className={etiqueta}>
         Monto ($)
-        <input name="monto" inputMode="decimal" required placeholder="0" className={campo} />
+        <input
+          name="monto"
+          inputMode="decimal"
+          required
+          placeholder="0"
+          defaultValue={inicial ? pesosExactos(inicial.monto) : undefined}
+          className={campo}
+        />
       </label>
       <label className={etiqueta}>
         Fecha
-        <input name="fecha" type="date" required defaultValue={hoy} className={campo} />
+        <input name="fecha" type="date" required defaultValue={inicial?.fecha ?? fechaSugerida} className={campo} />
       </label>
       <label className={etiqueta}>
         {esTransferencia ? "Desde" : "Cuenta"}
-        <select name="cuenta_id" required className={campo}>
+        <select name="cuenta_id" required defaultValue={inicial?.cuentaId} className={campo}>
           {cuentas.map((c) => (
             <option key={c.id} value={c.id}>
               {c.nombre}
@@ -73,7 +101,7 @@ export function FormularioMovimiento({
       {esTransferencia ? (
         <label className={etiqueta}>
           Hacia
-          <select name="cuenta_destino_id" required className={campo}>
+          <select name="cuenta_destino_id" required defaultValue={inicial?.cuentaDestinoId} className={campo}>
             {cuentas.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.nombre}
@@ -82,41 +110,147 @@ export function FormularioMovimiento({
           </select>
         </label>
       ) : (
-        <SelectorCategoria key={tipo} categorias={categorias} tipo={tipo === "ingreso" ? "ingreso" : "egreso"} />
+        <SelectorCategoria
+          key={tipo}
+          categorias={categorias}
+          tipo={tipo === "ingreso" ? "ingreso" : "egreso"}
+          valorInicial={inicial?.tipo === tipo ? inicial.categoriaId : undefined}
+        />
       )}
       <label className={etiqueta}>
         Descripción
-        <input name="descripcion" className={campo} />
+        <input name="descripcion" defaultValue={inicial?.descripcion} className={campo} />
       </label>
       <label className={etiqueta}>
         Estado
-        <select name="estado" defaultValue="real" className={campo}>
-          <option value="real">Ya pasó (real)</option>
-          <option value="planificado">Planificado</option>
+        <select name="estado" defaultValue={inicial && inicial.estado !== "real" ? "planificado" : "real"} className={campo}>
+          <option value="real">Confirmado (ya pasó)</option>
+          <option value="planificado">Planificado (sin confirmar)</option>
         </select>
       </label>
-      <div className="flex items-center gap-3 sm:col-span-3">
+      <div className="flex flex-wrap items-center gap-3 sm:col-span-3">
         <button type="submit" disabled={pendiente || cuentas.length === 0} className={boton}>
           Guardar
         </button>
+        <button type="button" onClick={alCancelar} className={botonSecundario}>
+          Cancelar
+        </button>
         {estado.error && <p className="text-sm text-red-600">{estado.error}</p>}
-        {estado.ok && <p className="text-sm text-green-700 dark:text-green-400">Guardado.</p>}
       </div>
     </form>
   );
 }
 
-export function BotonBorrar({ id }: { id: string }) {
+/** Botón "Nuevo movimiento" que despliega el formulario. */
+export function NuevoMovimiento({ fechaSugerida, ...opciones }: Opciones & { fechaSugerida: string }) {
+  const [abierto, setAbierto] = useState(false);
+  const [guardados, setGuardados] = useState(0);
+
+  if (!abierto) {
+    return (
+      <div className="flex items-center gap-3">
+        <button type="button" onClick={() => setAbierto(true)} className={boton}>
+          ＋ Nuevo movimiento
+        </button>
+        {guardados > 0 && <p className="text-sm text-green-700 dark:text-green-400">Guardado.</p>}
+      </div>
+    );
+  }
   return (
-    <button
-      type="button"
-      onClick={() => {
-        if (confirm("¿Borrar este movimiento?")) void borrarMovimiento(id);
-      }}
-      className="text-red-600 hover:underline"
-      aria-label="Borrar"
-    >
-      Borrar
-    </button>
+    <div className="rounded-xl border border-black/10 p-5 dark:border-white/15">
+      <FormularioMovimiento
+        {...opciones}
+        fechaSugerida={fechaSugerida}
+        alGuardar={() => {
+          setAbierto(false);
+          setGuardados((n) => n + 1);
+        }}
+        alCancelar={() => setAbierto(false)}
+      />
+    </div>
+  );
+}
+
+/** Confirmar, conciliar, editar y borrar un movimiento de la lista. */
+export function AccionesMovimiento({
+  mov,
+  guardado,
+  opciones,
+}: {
+  mov: Movimiento;
+  /** false si es una cuota o un recurrente generado que todavía no se cargó. */
+  guardado: boolean;
+  opciones: Opciones;
+}) {
+  const [editando, setEditando] = useState(false);
+  const [pendiente, empezar] = useTransition();
+  const [conciliado, setConciliado] = useOptimistic(Boolean(mov.conciliado));
+  const real = mov.estado === "real";
+  const generado = mov.origen.tipo !== "manual";
+
+  const enlace = "text-sm hover:underline disabled:opacity-50";
+  return (
+    <>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        {!real && (
+          <button
+            type="button"
+            disabled={pendiente}
+            onClick={() => empezar(() => marcar(mov, guardado, {}))}
+            className={`${enlace} font-medium text-amber-700 dark:text-amber-400`}
+          >
+            Confirmar
+          </button>
+        )}
+        {real && (
+          <label className="flex cursor-pointer items-center gap-1.5 text-sm">
+            <input
+              type="checkbox"
+              checked={conciliado}
+              disabled={pendiente}
+              onChange={(e) => {
+                const valor = e.target.checked;
+                empezar(async () => {
+                  setConciliado(valor);
+                  await marcar(mov, guardado, { conciliado: valor });
+                });
+              }}
+              className="size-4 accent-green-700"
+            />
+            Conciliado
+          </label>
+        )}
+        <button type="button" onClick={() => setEditando((e) => !e)} className={enlace}>
+          Editar
+        </button>
+        {guardado && (
+          <button
+            type="button"
+            disabled={pendiente}
+            onClick={() => {
+              const pregunta = generado
+                ? "¿Borrar lo cargado? Vuelve a quedar como estaba planificado."
+                : "¿Borrar este movimiento?";
+              if (confirm(pregunta)) empezar(() => borrarMovimiento(mov.id));
+            }}
+            className={`${enlace} text-red-600`}
+          >
+            Borrar
+          </button>
+        )}
+      </div>
+      {editando && (
+        <div className="mt-3 w-full rounded-lg border border-black/10 p-4 dark:border-white/15">
+          <FormularioMovimiento
+            {...opciones}
+            fechaSugerida={mov.fecha}
+            base={guardado ? { id: mov.id } : { origen: mov.origen, mesResumen: mov.mesResumen }}
+            inicial={mov}
+            alGuardar={() => setEditando(false)}
+            alCancelar={() => setEditando(false)}
+          />
+        </div>
+      )}
+    </>
   );
 }

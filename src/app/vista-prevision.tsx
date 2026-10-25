@@ -71,6 +71,11 @@ function Resumen({ mes }: { mes: MesPrevision }) {
     { titulo: "En 48 h", valor: mes.disponible48h, nota: "inversiones rescatables" },
     { titulo: "Reserva", valor: mes.reserva, nota: "ahorro apartado" },
     { titulo: "Deuda tarjetas", valor: mes.deudaTarjetas, nota: "resúmenes por pagar" },
+    {
+      titulo: "Deuda en cuotas",
+      valor: mes.deudaCuotas,
+      nota: `al cierre · $ ${pesos(mes.cuotasDelMes)} se pagan este mes`,
+    },
   ];
   return (
     <section>
@@ -80,7 +85,7 @@ function Resumen({ mes }: { mes: MesPrevision }) {
           <span className="text-amber-600"> · {mes.pendientes} movimientos por confirmar (montos estimados)</span>
         )}
       </h2>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         {tarjetas.map((t) => (
           <div key={t.titulo} className="rounded-xl border border-black/10 p-4 dark:border-white/15">
             <div className="text-sm text-black/60 dark:text-white/60">{t.titulo}</div>
@@ -194,6 +199,10 @@ function Grilla({ prevision }: { prevision: MesPrevision[] }) {
             {fila(
               "Deuda tarjetas",
               prevision.map((m) => m.deudaTarjetas),
+            )}
+            {fila(
+              "Deuda en cuotas",
+              prevision.map((m) => m.deudaCuotas),
             )}
           </tbody>
         </table>
