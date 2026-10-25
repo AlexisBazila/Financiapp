@@ -56,6 +56,7 @@ export function generarCuotasPlan(plan: PlanCuotas, cuenta: Cuenta): Movimiento[
       cuentaId: plan.cuentaId,
       categoria: plan.categoria,
       categoriaId: plan.categoriaId,
+      contraparte: plan.contraparte,
       estado: "planificado" as const,
       origen: { tipo: "cuotas" as const, planId: plan.id, numero: k + 1, total: plan.cantidad },
     };
@@ -88,6 +89,7 @@ export function generarCuotasPrestamo(prestamo: Prestamo): Movimiento[] {
     cuentaId: prestamo.cuentaId,
     categoria: prestamo.categoria,
     categoriaId: prestamo.categoriaId,
+    contraparte: prestamo.contraparte,
     estado: "planificado",
     origen: { tipo: "prestamo", prestamoId: prestamo.id, numero: k + 1, total },
   }));

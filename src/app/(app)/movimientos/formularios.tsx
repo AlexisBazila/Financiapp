@@ -6,6 +6,7 @@ import type { Movimiento } from "@/lib/finanzas/tipos";
 import { boton, botonSecundario, campo, etiqueta } from "../../estilos";
 import { pesosExactos } from "../../formato";
 import { SelectorCategoria } from "../categorias/selector";
+import { CampoContraparte } from "./contraparte";
 import { borrarMovimiento, guardarMovimiento, marcar, type Base } from "./acciones";
 
 interface Opcion {
@@ -16,11 +17,14 @@ interface Opcion {
 export interface Opciones {
   cuentas: Opcion[];
   categorias: Categoria[];
+  /** Comercios y personas ya cargados, para sugerir. */
+  contrapartes: string[];
 }
 
 function FormularioMovimiento({
   cuentas,
   categorias,
+  contrapartes,
   fechaSugerida,
   base,
   inicial,
@@ -115,6 +119,13 @@ function FormularioMovimiento({
           categorias={categorias}
           tipo={tipo === "ingreso" ? "ingreso" : "egreso"}
           valorInicial={inicial?.tipo === tipo ? inicial.categoriaId : undefined}
+        />
+      )}
+      {!esTransferencia && (
+        <CampoContraparte
+          sugerencias={contrapartes}
+          tipo={tipo === "ingreso" ? "ingreso" : "egreso"}
+          valorInicial={inicial?.contraparte}
         />
       )}
       <label className={etiqueta}>

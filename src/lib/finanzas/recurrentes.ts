@@ -31,6 +31,7 @@ export function instanciarRecurrente(
       cuentaId: recurrente.cuentaId,
       categoria: recurrente.categoria,
       categoriaId: recurrente.categoriaId,
+      contraparte: recurrente.contraparte,
       estado: recurrente.requiereConfirmacion ? "pendiente" : "planificado",
       origen: { tipo: "recurrente", recurrenteId: recurrente.id, mes },
     });

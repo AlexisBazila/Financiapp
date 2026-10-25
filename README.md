@@ -8,7 +8,8 @@ y se pueden aplicar al plan.
 
 Etapa 1 en curso: login, cuentas (con tarjetas y su cierre de cada mes), movimientos, compras en cuotas,
 préstamos, ingresos y gastos recurrentes (con confirmación mensual), categorías con subcategorías, emoji
-y color, movimientos por mes que se confirman y concilian con el banco, presupuestos
+y color, movimientos por mes que se confirman y concilian con el banco (con el comercio o la persona
+de cada pago, como figura en el resumen), presupuestos
 mensuales por categorías, la vista de cada cuenta y la previsión
 con los datos guardados en Supabase. `/ejemplo` muestra la previsión con datos de muestra.
 

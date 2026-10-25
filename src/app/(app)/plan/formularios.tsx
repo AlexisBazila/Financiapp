@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import type { Categoria } from "@/lib/datos/categorias";
 import { boton, campo, etiqueta } from "../../estilos";
 import { SelectorCategoria } from "../categorias/selector";
+import { CampoContraparte } from "../movimientos/contraparte";
 import {
   borrar,
   confirmarRecurrente,
@@ -72,10 +73,12 @@ export function ConfirmarPendiente({
 export function FormularioCuotas({
   cuentas,
   categorias,
+  contrapartes,
   hoy,
 }: {
   cuentas: Opcion[];
   categorias: Categoria[];
+  contrapartes: string[];
   hoy: string;
 }) {
   const [estado, accion, pendiente] = useActionState(crearPlanCuotas, {});
@@ -86,6 +89,7 @@ export function FormularioCuotas({
         <input name="descripcion" required placeholder="Heladera" className={campo} />
       </label>
       <SelectorCategoria categorias={categorias} tipo="egreso" />
+      <CampoContraparte sugerencias={contrapartes} />
       <SelectorCuenta cuentas={cuentas} etiquetaTexto="Pagado con" />
       <label className={etiqueta}>
         Fecha de compra
@@ -122,11 +126,13 @@ export function FormularioCuotas({
 export function FormularioPrestamo({
   cuentas,
   categorias,
+  contrapartes,
   categoriaSugerida,
   hoy,
 }: {
   cuentas: Opcion[];
   categorias: Categoria[];
+  contrapartes: string[];
   categoriaSugerida?: string;
   hoy: string;
 }) {
@@ -174,6 +180,7 @@ export function FormularioPrestamo({
         </>
       )}
       <SelectorCategoria categorias={categorias} tipo="egreso" valorInicial={categoriaSugerida} />
+      <CampoContraparte sugerencias={contrapartes} />
       <div className="flex items-center gap-3 sm:col-span-3">
         <button type="submit" disabled={pendiente || cuentas.length === 0} className={boton}>
           Agregar préstamo
@@ -187,10 +194,12 @@ export function FormularioPrestamo({
 export function FormularioRecurrente({
   cuentas,
   categorias,
+  contrapartes,
   mesActual,
 }: {
   cuentas: Opcion[];
   categorias: Categoria[];
+  contrapartes: string[];
   mesActual: string;
 }) {
   const [estado, accion, pendiente] = useActionState(crearRecurrente, {});
@@ -209,6 +218,7 @@ export function FormularioRecurrente({
         </select>
       </label>
       <SelectorCategoria key={tipo} categorias={categorias} tipo={tipo === "ingreso" ? "ingreso" : "egreso"} />
+      <CampoContraparte sugerencias={contrapartes} tipo={tipo === "ingreso" ? "ingreso" : "egreso"} />
       <SelectorCuenta cuentas={cuentas} />
       <label className={etiqueta}>
         Monto estimado

@@ -15,10 +15,11 @@ export default async function Movimientos({ searchParams }: PageProps<"/movimien
   const mes = typeof pedido === "string" && MES.test(pedido) ? pedido : actual;
 
   const { supabase } = await requerirUsuario();
-  const { datos, cuentasActivas, categorias } = await cargarHogar(supabase);
+  const { datos, cuentasActivas, categorias, contrapartes } = await cargarHogar(supabase);
   const opciones = {
     cuentas: datos.cuentas.filter((c) => cuentasActivas.includes(c.id)).map((c) => ({ id: c.id, nombre: c.nombre })),
     categorias: categorias.filter((c) => !c.archivada),
+    contrapartes,
   };
 
   const lista = expandir(datos, mes, mes)

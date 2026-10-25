@@ -28,6 +28,9 @@ function montoTotal(form: FormData, cantidad: number): number | null {
   return texto(form, "modo_monto") === "cuota" ? monto * cantidad : monto;
 }
 
+/** Comercio o persona, opcional. */
+const contraparte = (form: FormData) => texto(form, "contraparte").slice(0, 80) || null;
+
 async function guardar(tabla: string, fila: Record<string, unknown>): Promise<Resultado> {
   const { supabase } = await requerirUsuario();
   const { error } = await supabase.from(tabla).insert(fila);
@@ -55,6 +58,7 @@ export async function crearPlanCuotas(_: Resultado, form: FormData): Promise<Res
     descripcion,
     categoria: categoria.categoria ?? "Sin categoría",
     categoria_id: categoria.categoria_id,
+    contraparte: contraparte(form),
     cuenta_id: texto(form, "cuenta_id"),
     fecha_compra: fechaCompra,
     monto_total: total,
@@ -80,6 +84,7 @@ export async function crearPrestamo(_: Resultado, form: FormData): Promise<Resul
     descripcion,
     categoria: categoria.categoria ?? "Créditos",
     categoria_id: categoria.categoria_id,
+    contraparte: contraparte(form),
     cuenta_id: texto(form, "cuenta_id"),
     primera_cuota: primeraCuota,
     tasa_anual: tasaAnual,
@@ -127,6 +132,7 @@ export async function crearRecurrente(_: Resultado, form: FormData): Promise<Res
     tipo,
     categoria: categoria.categoria ?? descripcion,
     categoria_id: categoria.categoria_id,
+    contraparte: contraparte(form),
     cuenta_id: texto(form, "cuenta_id"),
     monto_estimado: monto,
     dia_del_mes: dia,
@@ -151,7 +157,7 @@ export async function confirmarRecurrente(
 
   const { data: r, error: errorLectura } = await supabase
     .from("recurrentes")
-    .select("descripcion, tipo, categoria, categoria_id, cuenta_id")
+    .select("descripcion, tipo, categoria, categoria_id, contraparte, cuenta_id")
     .eq("id", recurrenteId)
     .single();
   if (errorLectura || !r) return { error: "No se encontró el recurrente." };
@@ -164,6 +170,7 @@ export async function confirmarRecurrente(
     cuenta_id: r.cuenta_id,
     categoria: r.categoria,
     categoria_id: r.categoria_id,
+    contraparte: r.contraparte,
     estado: "real",
     origen: { tipo: "recurrente", recurrenteId, mes },
   });

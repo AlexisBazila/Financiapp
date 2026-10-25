@@ -71,6 +71,8 @@ export interface Movimiento {
   categoria?: string;
   /** Categoría o subcategoría elegida. */
   categoriaId?: string;
+  /** Comercio, persona o cuenta a la que va el pago o de la que viene, como figura en el extracto. */
+  contraparte?: string;
   estado: Estado;
   origen: Origen;
   /** Solo en compras con tarjeta: resumen en el que cae, si ya se conoce. */
@@ -84,6 +86,7 @@ export interface PlanCuotas {
   descripcion: string;
   categoria: string;
   categoriaId?: string;
+  contraparte?: string;
   cuentaId: string;
   fechaCompra: Fecha;
   /** Precio de contado. */
@@ -98,6 +101,7 @@ export interface Prestamo {
   descripcion: string;
   categoria: string;
   categoriaId?: string;
+  contraparte?: string;
   /** Cuenta desde la que se pagan las cuotas. */
   cuentaId: string;
   capital: Centavos;
@@ -116,6 +120,7 @@ export interface Recurrente {
   tipo: "ingreso" | "egreso";
   categoria: string;
   categoriaId?: string;
+  contraparte?: string;
   cuentaId: string;
   montoEstimado: Centavos;
   diaDelMes: number;

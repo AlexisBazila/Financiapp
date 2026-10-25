@@ -65,6 +65,20 @@ describe("cuotas", () => {
     expect(cuotas[0].descripcion).toBe("Heladera (1/3)");
     expect(cuotas[2].origen).toEqual({ tipo: "cuotas", planId: "heladera", numero: 3, total: 3 });
   });
+
+  it("cada cuota lleva el comercio de la compra, para conciliar con el resumen", () => {
+    const plan: PlanCuotas = {
+      id: "ceramicas",
+      descripcion: "Cerámicas",
+      categoria: "Hogar",
+      contraparte: "Bercomat",
+      cuentaId: "visa",
+      fechaCompra: "2026-11-10",
+      montoTotal: 90_000_00,
+      cantidad: 18,
+    };
+    expect(new Set(generarCuotasPlan(plan, visa).map((c) => c.contraparte))).toEqual(new Set(["Bercomat"]));
+  });
 });
 
 describe("tarjeta", () => {

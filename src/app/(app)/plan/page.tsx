@@ -26,7 +26,7 @@ function progreso(cuotas: Movimiento[], hoy: string): string {
 
 export default async function Plan() {
   const { supabase } = await requerirUsuario();
-  const { hogar, datos, cuentasActivas, categorias: todas } = await cargarHogar(supabase);
+  const { hogar, datos, cuentasActivas, categorias: todas, contrapartes } = await cargarHogar(supabase);
   const hoy = hoyAR();
   const mesActual = mesDe(hoy);
   const cuentasPorId = new Map<string, Cuenta>(datos.cuentas.map((c) => [c.id, c]));
@@ -95,7 +95,8 @@ export default async function Plan() {
                   <span className="min-w-48 flex-1">
                     <span className="font-medium">{p.descripcion}</span>
                     <span className={`block text-xs ${textoSuave}`}>
-                      {cuenta?.nombre} · {p.cantidad} cuotas de $ {pesosExactos(cuotas[0]?.monto ?? 0)}
+                      {cuenta?.nombre}
+                      {p.contraparte && ` → ${p.contraparte}`} · {p.cantidad} cuotas de $ {pesosExactos(cuotas[0]?.monto ?? 0)}
                       {p.tasaAnual ? ` · ${p.tasaAnual}% anual` : " · sin interés"}
                     </span>
                   </span>
@@ -107,7 +108,7 @@ export default async function Plan() {
           </ul>
         )}
         <div className={`${caja} p-5`}>
-          <FormularioCuotas cuentas={opciones} categorias={categorias} hoy={hoy} />
+          <FormularioCuotas cuentas={opciones} categorias={categorias} contrapartes={contrapartes} hoy={hoy} />
         </div>
       </section>
 
@@ -122,7 +123,8 @@ export default async function Plan() {
                   <span className="min-w-48 flex-1">
                     <span className="font-medium">{p.descripcion}</span>
                     <span className={`block text-xs ${textoSuave}`}>
-                      {cuentasPorId.get(p.cuentaId)?.nombre} · {cuotas.length} cuotas
+                      {cuentasPorId.get(p.cuentaId)?.nombre}
+                      {p.contraparte && ` → ${p.contraparte}`} · {cuotas.length} cuotas
                       {p.sistema === "manual" ? " cargadas a mano" : ` · ${p.tasaAnual}% anual`}
                     </span>
                   </span>
@@ -137,6 +139,7 @@ export default async function Plan() {
           <FormularioPrestamo
             cuentas={sinTarjetas}
             categorias={categorias}
+            contrapartes={contrapartes}
             categoriaSugerida={cuotasDePrestamos}
             hoy={hoy}
           />
@@ -152,7 +155,8 @@ export default async function Plan() {
                 <span className="min-w-48 flex-1">
                   <span className="font-medium">{r.descripcion}</span>
                   <span className={`block text-xs ${textoSuave}`}>
-                    {cuentasPorId.get(r.cuentaId)?.nombre} · día {r.diaDelMes} · desde {nombreMes(r.desde)}
+                    {cuentasPorId.get(r.cuentaId)?.nombre}
+                    {r.contraparte && ` ${r.tipo === "ingreso" ? "←" : "→"} ${r.contraparte}`} · día {r.diaDelMes} · desde {nombreMes(r.desde)}
                     {r.hasta ? ` hasta ${nombreMes(r.hasta)}` : ""}
                     {r.requiereConfirmacion ? " · se confirma cada mes" : ""}
                   </span>
@@ -170,7 +174,12 @@ export default async function Plan() {
           </ul>
         )}
         <div className={`${caja} p-5`}>
-          <FormularioRecurrente cuentas={opciones} categorias={categorias} mesActual={mesActual} />
+          <FormularioRecurrente
+            cuentas={opciones}
+            categorias={categorias}
+            contrapartes={contrapartes}
+            mesActual={mesActual}
+          />
         </div>
       </section>
     </div>

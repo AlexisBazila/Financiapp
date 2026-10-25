@@ -15,13 +15,14 @@ export default async function Cuenta({ params, searchParams }: PageProps<"/cuent
   const mes = typeof pedido === "string" && MES.test(pedido) ? pedido : actual;
 
   const { supabase } = await requerirUsuario();
-  const { hogar, datos, cuentasActivas, categorias } = await cargarHogar(supabase);
+  const { hogar, datos, cuentasActivas, categorias, contrapartes } = await cargarHogar(supabase);
   const cuenta = datos.cuentas.find((c) => c.id === id);
   if (!cuenta) notFound();
 
   const opciones = {
     cuentas: datos.cuentas.filter((c) => cuentasActivas.includes(c.id)).map((c) => ({ id: c.id, nombre: c.nombre })),
     categorias: categorias.filter((c) => !c.archivada),
+    contrapartes,
   };
   const lista = expandir(datos, mes, mes)
     .filter((m) => (m.cuentaId === id || m.cuentaDestinoId === id) && mesDe(m.fecha) === mes)

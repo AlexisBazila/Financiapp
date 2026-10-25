@@ -35,6 +35,14 @@ export interface DatosHogar {
   presupuestos: Presupuesto[];
   /** Cuentas no archivadas, para elegir en los formularios. `datos.cuentas` las incluye todas. */
   cuentasActivas: string[];
+  /** Comercios y personas ya usados, los más frecuentes primero, para sugerir al cargar. */
+  contrapartes: string[];
+}
+
+function masUsadas(nombres: (string | undefined)[]): string[] {
+  const veces = new Map<string, number>();
+  for (const n of nombres) if (n) veces.set(n, (veces.get(n) ?? 0) + 1);
+  return [...veces].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "es")).map(([n]) => n);
 }
 
 function sinError<T>(resultado: { data: T | null; error: { message: string } | null }): T {
@@ -70,19 +78,24 @@ export async function cargarHogar(supabase: SupabaseClient): Promise<DatosHogar>
     ...new Set([...ids, ...listaCategorias.filter((c) => c.padreId && ids.includes(c.padreId)).map((c) => c.id)]),
   ];
 
+  const datos: Datos = {
+    cuentas: filasCuentas.map((c) => aCuenta(c, filasCiclos)),
+    movimientos: sinError<FilaMovimiento[]>(movimientos).map((f) => conCategoria(aMovimiento(f), porId)),
+    planesCuotas: sinError<FilaPlanCuotas[]>(planes).map((f) => conCategoria(aPlanCuotas(f), porId)),
+    prestamos: sinError<FilaPrestamo[]>(prestamos).map((f) => conCategoria(aPrestamo(f), porId)),
+    recurrentes: sinError<FilaRecurrente[]>(recurrentes).map((f) => conCategoria(aRecurrente(f), porId)),
+    presupuestos: listaPresupuestos.map((p) => ({ ...p, categoriaIds: conSubcategorias(p.categoriaIds) })),
+  };
+
   return {
     hogar: { id: filaHogar.id, nombre: filaHogar.nombre, mesInicio: filaHogar.mes_inicio },
-    datos: {
-      cuentas: filasCuentas.map((c) => aCuenta(c, filasCiclos)),
-      movimientos: sinError<FilaMovimiento[]>(movimientos).map((f) => conCategoria(aMovimiento(f), porId)),
-      planesCuotas: sinError<FilaPlanCuotas[]>(planes).map((f) => conCategoria(aPlanCuotas(f), porId)),
-      prestamos: sinError<FilaPrestamo[]>(prestamos).map((f) => conCategoria(aPrestamo(f), porId)),
-      recurrentes: sinError<FilaRecurrente[]>(recurrentes).map((f) => conCategoria(aRecurrente(f), porId)),
-      presupuestos: listaPresupuestos.map((p) => ({ ...p, categoriaIds: conSubcategorias(p.categoriaIds) })),
-    },
+    datos,
     escenarios: sinError<FilaEscenario[]>(escenarios).map(aEscenario),
     categorias: listaCategorias,
     presupuestos: listaPresupuestos,
     cuentasActivas: filasCuentas.filter((c) => !c.archivada).map((c) => c.id),
+    contrapartes: masUsadas(
+      [...datos.movimientos, ...datos.planesCuotas, ...datos.prestamos, ...datos.recurrentes].map((x) => x.contraparte),
+    ),
   };
 }

@@ -224,7 +224,7 @@ function Fila({
           <span className={`block text-xs ${textoSuave}`}>
             {m.tipo === "transferencia"
               ? `${nombres.get(m.cuentaId)} → ${nombres.get(m.cuentaDestinoId ?? "")}`
-              : `${nombres.get(m.cuentaId)}${ruta ? ` · ${ruta}` : ""}`}
+              : `${nombres.get(m.cuentaId)}${m.contraparte ? ` ${s > 0 ? "←" : "→"} ${m.contraparte}` : ""}${ruta ? ` · ${ruta}` : ""}`}
           </span>
         </span>
         {cuota && (
