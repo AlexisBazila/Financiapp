@@ -1,10 +1,30 @@
 import { generarCuotasPlan, generarCuotasPrestamo } from "./cuotas";
-import { mesDe, rangoMeses } from "./fechas";
+import { fechaEnMes, mesDe, rangoMeses } from "./fechas";
 import { instanciarRecurrente } from "./recurrentes";
 import { cicloDe, resumenDeFecha } from "./tarjeta";
-import type { Centavos, Cuenta, Datos, Estado, Mes, Movimiento } from "./tipos";
+import type { Centavos, Cuenta, Datos, Estado, Mes, Movimiento, Presupuesto } from "./tipos";
 
 export const CATEGORIA_SALDO_TARJETA = "Tarjeta (resumen anterior)";
+
+/** Qué tan seguro es un monto: planificado, ya pasó, o ya pasó y se chequeó con el banco. */
+export type Certeza = "planificado" | "real" | "conciliado";
+
+export interface Celda {
+  /** La menos segura de las partes que la componen. */
+  certeza: Certeza;
+  /** Si incluye cuotas de compras o préstamos. */
+  cuotas: boolean;
+}
+
+export interface MesPresupuesto {
+  id: string;
+  nombre: string;
+  monto: Centavos;
+  /** Gastado en sus categorías, por fecha de compra. */
+  gastado: Centavos;
+  /** monto - gastado; negativo si se pasó. */
+  resto: Centavos;
+}
 
 export interface MesPrevision {
   mes: Mes;
@@ -14,6 +34,8 @@ export interface MesPrevision {
   neto: Centavos;
   ingresosPorCategoria: Record<string, Centavos>;
   egresosPorCategoria: Record<string, Centavos>;
+  /** Certeza de cada monto por categoría; clave `ingreso:categoría` o `egreso:categoría`. */
+  celdas: Record<string, Celda>;
   /** Saldo de cada cuenta al cierre del mes. En tarjetas, la deuda. */
   saldos: Record<string, Centavos>;
   /** Lo que se puede gastar ya. */
@@ -30,6 +52,7 @@ export interface MesPrevision {
   cuotasDelMes: Centavos;
   /** Lo que queda por pagar en cuotas después de este mes. */
   deudaCuotas: Centavos;
+  presupuestos: MesPresupuesto[];
 }
 
 export interface OpcionesPrevision {
@@ -37,6 +60,11 @@ export interface OpcionesPrevision {
   meses: number;
   /** Qué movimientos se cuentan. Por defecto todos. */
   estados?: Estado[];
+  /**
+   * Mes actual. Lo que resta de un presupuesto se prevé como gasto solo desde este mes: en los meses
+   * pasados, lo que no se gastó no se va a gastar. Sin `mesActual`, se prevé en todos.
+   */
+  mesActual?: Mes;
 }
 
 /** Clave de una cuota generada, para reconocerla cuando ya se cargó (confirmada o editada). */
@@ -81,13 +109,22 @@ interface Efecto {
   /** Lo que suma (o resta) al saldo de la cuenta; en tarjetas, a la deuda. */
   delta: Centavos;
   /** Si el efecto es plata que entra o sale del hogar en ese mes, su categoría. */
-  flujo?: { tipo: "ingreso" | "egreso"; categoria: string; monto: Centavos };
+  flujo?: { tipo: "ingreso" | "egreso"; categoria: string; monto: Centavos; certeza: Certeza; cuota: boolean };
 }
+
+function certezaDe(mov: Movimiento): Certeza {
+  if (mov.estado !== "real") return "planificado";
+  return mov.conciliado ? "conciliado" : "real";
+}
+
+const ORDEN_CERTEZA: Record<Certeza, number> = { planificado: 0, real: 1, conciliado: 2 };
 
 function efectosDe(mov: Movimiento, cuentas: Map<string, Cuenta>, desde: Mes): Efecto[] {
   const cuenta = cuentas.get(mov.cuentaId);
   if (!cuenta) throw new Error(`No existe la cuenta ${mov.cuentaId}`);
   const categoria = mov.categoria ?? "Sin categoría";
+  const certeza = certezaDe(mov);
+  const cuota = claveCuota(mov.origen) !== undefined;
 
   if (mov.tipo === "transferencia") {
     const destino = cuentas.get(mov.cuentaDestinoId ?? "");
@@ -109,7 +146,7 @@ function efectosDe(mov: Movimiento, cuentas: Map<string, Cuenta>, desde: Mes): E
         mes: mesDe(mov.fecha),
         cuentaId: cuenta.id,
         delta: signo * mov.monto,
-        flujo: { tipo: mov.tipo, categoria, monto: mov.monto },
+        flujo: { tipo: mov.tipo, categoria, monto: mov.monto, certeza, cuota },
       },
     ];
   }
@@ -126,7 +163,7 @@ function efectosDe(mov: Movimiento, cuentas: Map<string, Cuenta>, desde: Mes): E
       mes: mesPago,
       cuentaId: cuenta.tarjeta.cuentaPagoId,
       delta: signo * mov.monto,
-      flujo: { tipo: mov.tipo, categoria, monto: mov.monto },
+      flujo: { tipo: mov.tipo, categoria, monto: mov.monto, certeza, cuota },
     },
   ];
 }
@@ -157,10 +194,30 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
           mes: opciones.desde,
           cuentaId: c.tarjeta.cuentaPagoId,
           delta: -c.saldoInicial,
-          flujo: { tipo: "egreso", categoria: CATEGORIA_SALDO_TARJETA, monto: c.saldoInicial },
+          flujo: {
+            tipo: "egreso",
+            categoria: CATEGORIA_SALDO_TARJETA,
+            monto: c.saldoInicial,
+            certeza: "real",
+            cuota: false,
+          },
         },
       );
     }
+  }
+
+  const presupuestosPorMes = new Map<Mes, MesPresupuesto[]>();
+  for (const mes of meses) {
+    const delMes: MesPresupuesto[] = [];
+    for (const p of datos.presupuestos ?? []) {
+      if (mes < p.desde || (p.hasta && mes > p.hasta)) continue;
+      const resumen = resumenPresupuesto(p, mes, movimientos);
+      delMes.push(resumen);
+      if (resumen.resto > 0 && (!opciones.mesActual || mes >= opciones.mesActual)) {
+        efectos.push(...efectosDe(restoPresupuesto(p, mes, resumen.resto), cuentas, opciones.desde));
+      }
+    }
+    presupuestosPorMes.set(mes, delMes);
   }
 
   const porMes = new Map<Mes, Efecto[]>(meses.map((m) => [m, []]));
@@ -190,12 +247,20 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
   return meses.map((mes) => {
     const ingresosPorCategoria: Record<string, Centavos> = {};
     const egresosPorCategoria: Record<string, Centavos> = {};
+    const celdas: Record<string, Celda> = {};
     let ingresos = 0;
     let egresos = 0;
 
     for (const e of porMes.get(mes) ?? []) {
       saldos[e.cuentaId] += e.delta;
       if (!e.flujo) continue;
+      const clave = `${e.flujo.tipo}:${e.flujo.categoria}`;
+      const previa = celdas[clave];
+      celdas[clave] = {
+        certeza:
+          previa && ORDEN_CERTEZA[previa.certeza] < ORDEN_CERTEZA[e.flujo.certeza] ? previa.certeza : e.flujo.certeza,
+        cuotas: Boolean(previa?.cuotas) || e.flujo.cuota,
+      };
       if (e.flujo.tipo === "ingreso") {
         ingresos += e.flujo.monto;
         ingresosPorCategoria[e.flujo.categoria] = (ingresosPorCategoria[e.flujo.categoria] ?? 0) + e.flujo.monto;
@@ -224,6 +289,7 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
       neto: ingresos - egresos,
       ingresosPorCategoria,
       egresosPorCategoria,
+      celdas,
       saldos: { ...saldos },
       disponible,
       disponible48h,
@@ -232,7 +298,36 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
       pendientes: pendientesPorMes.get(mes) ?? 0,
       cuotasDelMes: cuotasPorMes.get(mes) ?? 0,
       deudaCuotas: cuotasDespuesDe(mes),
+      presupuestos: presupuestosPorMes.get(mes) ?? [],
     };
   });
 }
 
+
+/** Etiqueta con la que lo que resta de un presupuesto aparece en los egresos de la previsión. */
+export function categoriaResto(p: Pick<Presupuesto, "icono" | "nombre">): string {
+  return `${p.icono ? `${p.icono} ` : ""}${p.nombre} (resto del presupuesto)`;
+}
+
+function resumenPresupuesto(p: Presupuesto, mes: Mes, movimientos: Movimiento[]): MesPresupuesto {
+  const categorias = new Set(p.categoriaIds);
+  const gastado = movimientos
+    .filter((m) => m.tipo === "egreso" && m.categoriaId && categorias.has(m.categoriaId) && mesDe(m.fecha) === mes)
+    .reduce((total, m) => total + m.monto, 0);
+  return { id: p.id, nombre: p.nombre, monto: p.monto, gastado, resto: p.monto - gastado };
+}
+
+/** Lo que resta de un presupuesto en un mes, como un gasto planificado de fin de mes. */
+function restoPresupuesto(p: Presupuesto, mes: Mes, resto: Centavos): Movimiento {
+  return {
+    id: `${p.id}@${mes}`,
+    fecha: fechaEnMes(mes, 28),
+    descripcion: p.nombre,
+    tipo: "egreso",
+    monto: resto,
+    cuentaId: p.cuentaId,
+    categoria: categoriaResto(p),
+    estado: "planificado",
+    origen: { tipo: "manual" },
+  };
+}

@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { cuotasAlemanas, cuotasFrancesas, generarCuotasPlan, repartir } from "./cuotas";
 import { consolidarEscenario, aplicarEscenario } from "./escenarios";
 import { sumarMeses } from "./fechas";
-import { calcularPrevision, CATEGORIA_SALDO_TARJETA } from "./prevision";
+import { calcularPrevision, CATEGORIA_SALDO_TARJETA, categoriaResto } from "./prevision";
 import { confirmar, instanciarRecurrente } from "./recurrentes";
 import { resumenDeFecha } from "./tarjeta";
-import type { Cuenta, Datos, Escenario, PlanCuotas, Recurrente } from "./tipos";
+import type { Cuenta, Datos, Escenario, Movimiento, PlanCuotas, Presupuesto, Recurrente } from "./tipos";
 
 const banco: Cuenta = { id: "banco", nombre: "Banco", tipo: "banco", disponibilidad: "inmediata", saldoInicial: 0 };
 const ahorro: Cuenta = { id: "ahorro", nombre: "Ahorro", tipo: "banco", disponibilidad: "reserva", saldoInicial: 0 };
@@ -64,6 +64,20 @@ describe("cuotas", () => {
     expect(cuotas.map((c) => c.mesResumen)).toEqual(["2026-12", "2027-01", "2027-02"]);
     expect(cuotas[0].descripcion).toBe("Heladera (1/3)");
     expect(cuotas[2].origen).toEqual({ tipo: "cuotas", planId: "heladera", numero: 3, total: 3 });
+  });
+
+  it("cada cuota lleva el comercio de la compra, para conciliar con el resumen", () => {
+    const plan: PlanCuotas = {
+      id: "ceramicas",
+      descripcion: "Cerámicas",
+      categoria: "Hogar",
+      contraparte: "Bercomat",
+      cuentaId: "visa",
+      fechaCompra: "2026-11-10",
+      montoTotal: 90_000_00,
+      cantidad: 18,
+    };
+    expect(new Set(generarCuotasPlan(plan, visa).map((c) => c.contraparte))).toEqual(new Set(["Bercomat"]));
   });
 });
 
@@ -258,5 +272,79 @@ describe("escenarios", () => {
     // El hijo sigue vivo y ahora parte del nuevo plan base.
     expect(estado["e-heladera-cara"].estado).toBe("activo");
     expect(estado["e-heladera-cara"].padreId).toBeUndefined();
+  });
+});
+
+describe("presupuestos", () => {
+  const viveres: Presupuesto = {
+    id: "viveres",
+    nombre: "Víveres",
+    icono: "🛒",
+    monto: 1_200_000_00,
+    cuentaId: "banco",
+    desde: "2026-11",
+    categoriaIds: ["super", "verdu"],
+  };
+  const gasto = (id: string, fecha: string, monto: number, categoriaId: string, estado: Movimiento["estado"] = "real"): Movimiento => ({
+    id,
+    fecha,
+    descripcion: id,
+    tipo: "egreso",
+    monto,
+    cuentaId: "banco",
+    categoria: "Alimentos",
+    categoriaId,
+    estado,
+    origen: { tipo: "manual" },
+  });
+
+  it("descuenta lo gastado y prevé lo que resta", () => {
+    const datos: Datos = {
+      ...vacio(),
+      presupuestos: [viveres],
+      movimientos: [
+        gasto("super", "2026-11-05", 100_000_00, "super"),
+        gasto("verdu", "2026-11-06", 50_000_00, "verdu"),
+        gasto("ropa", "2026-11-07", 70_000_00, "ropa"),
+      ],
+    };
+    const [nov, dic] = calcularPrevision(datos, { desde: "2026-11", meses: 2 });
+    expect(nov.presupuestos).toEqual([
+      { id: "viveres", nombre: "Víveres", monto: 1_200_000_00, gastado: 150_000_00, resto: 1_050_000_00 },
+    ]);
+    // Lo gastado más lo que resta es el presupuesto completo, más lo que no está en el presupuesto.
+    expect(nov.egresos).toBe(1_200_000_00 + 70_000_00);
+    expect(nov.egresosPorCategoria[categoriaResto(viveres)]).toBe(1_050_000_00);
+    expect(dic.presupuestos[0].resto).toBe(1_200_000_00);
+  });
+
+  it("si se pasa, el resto es negativo y no suma gasto", () => {
+    const datos: Datos = {
+      ...vacio(),
+      presupuestos: [{ ...viveres, monto: 100_000_00 }],
+      movimientos: [gasto("super", "2026-11-05", 130_000_00, "super")],
+    };
+    const [nov] = calcularPrevision(datos, { desde: "2026-11", meses: 1 });
+    expect(nov.presupuestos[0].resto).toBe(-30_000_00);
+    expect(nov.egresos).toBe(130_000_00);
+  });
+
+  it("en los meses pasados no prevé lo que no se gastó", () => {
+    const datos: Datos = { ...vacio(), presupuestos: [viveres] };
+    const [nov, dic] = calcularPrevision(datos, { desde: "2026-11", meses: 2, mesActual: "2026-12" });
+    expect(nov.egresos).toBe(0);
+    expect(dic.egresos).toBe(1_200_000_00);
+  });
+
+  it("marca la certeza de cada celda y si tiene cuotas", () => {
+    const datos: Datos = {
+      ...vacio(),
+      movimientos: [
+        { ...gasto("a", "2026-11-05", 10_00, "super"), conciliado: true },
+        gasto("b", "2026-11-06", 10_00, "super", "planificado"),
+      ],
+    };
+    const [nov] = calcularPrevision(datos, { desde: "2026-11", meses: 1 });
+    expect(nov.celdas["egreso:Alimentos"]).toEqual({ certeza: "planificado", cuotas: false });
   });
 });

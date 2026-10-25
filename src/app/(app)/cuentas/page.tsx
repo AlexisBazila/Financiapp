@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { cargarHogar } from "@/lib/datos/cargar";
 import { requerirUsuario } from "@/lib/supabase/servidor";
 import { caja, textoSuave } from "../../estilos";
@@ -41,7 +42,9 @@ export default async function Cuentas() {
           <div key={c.id} className={`${caja} flex flex-col gap-3 p-4`}>
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <div>
-                <div className="font-medium">{c.nombre}</div>
+                <Link href={`/cuentas/${c.id}`} className="font-medium hover:underline">
+                  {c.nombre} ›
+                </Link>
                 <div className={`text-sm ${textoSuave}`}>
                   {TIPOS[c.tipo]}
                   {c.tarjeta

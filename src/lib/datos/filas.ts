@@ -8,6 +8,7 @@ import type {
   Origen,
   PlanCuotas,
   Prestamo,
+  Presupuesto,
   Recurrente,
 } from "@/lib/finanzas/tipos";
 
@@ -40,6 +41,7 @@ export interface FilaMovimiento {
   cuenta_destino_id: string | null;
   categoria: string | null;
   categoria_id: string | null;
+  contraparte: string | null;
   estado: Movimiento["estado"];
   origen: Origen;
   mes_resumen: string | null;
@@ -51,6 +53,7 @@ export interface FilaPlanCuotas {
   descripcion: string;
   categoria: string;
   categoria_id: string | null;
+  contraparte: string | null;
   cuenta_id: string;
   fecha_compra: string;
   monto_total: number;
@@ -63,6 +66,7 @@ export interface FilaPrestamo {
   descripcion: string;
   categoria: string;
   categoria_id: string | null;
+  contraparte: string | null;
   cuenta_id: string;
   capital: number;
   primera_cuota: string;
@@ -78,6 +82,7 @@ export interface FilaRecurrente {
   tipo: Recurrente["tipo"];
   categoria: string;
   categoria_id: string | null;
+  contraparte: string | null;
   cuenta_id: string;
   monto_estimado: number;
   dia_del_mes: number;
@@ -126,6 +131,7 @@ export function aMovimiento(fila: FilaMovimiento): Movimiento {
     cuentaDestinoId: fila.cuenta_destino_id ?? undefined,
     categoria: fila.categoria ?? undefined,
     categoriaId: fila.categoria_id ?? undefined,
+    contraparte: fila.contraparte ?? undefined,
     estado: fila.estado,
     origen: fila.origen,
     mesResumen: fila.mes_resumen ?? undefined,
@@ -139,6 +145,7 @@ export function aPlanCuotas(fila: FilaPlanCuotas): PlanCuotas {
     descripcion: fila.descripcion,
     categoria: fila.categoria,
     categoriaId: fila.categoria_id ?? undefined,
+    contraparte: fila.contraparte ?? undefined,
     cuentaId: fila.cuenta_id,
     fechaCompra: fila.fecha_compra,
     montoTotal: Number(fila.monto_total),
@@ -153,6 +160,7 @@ export function aPrestamo(fila: FilaPrestamo): Prestamo {
     descripcion: fila.descripcion,
     categoria: fila.categoria,
     categoriaId: fila.categoria_id ?? undefined,
+    contraparte: fila.contraparte ?? undefined,
     cuentaId: fila.cuenta_id,
     capital: Number(fila.capital),
     primeraCuota: fila.primera_cuota,
@@ -170,6 +178,7 @@ export function aRecurrente(fila: FilaRecurrente): Recurrente {
     tipo: fila.tipo,
     categoria: fila.categoria,
     categoriaId: fila.categoria_id ?? undefined,
+    contraparte: fila.contraparte ?? undefined,
     cuentaId: fila.cuenta_id,
     montoEstimado: Number(fila.monto_estimado),
     diaDelMes: fila.dia_del_mes,
@@ -186,5 +195,29 @@ export function aEscenario(fila: FilaEscenario): Escenario {
     padreId: fila.padre_id ?? undefined,
     estado: fila.estado,
     cambios: fila.cambios,
+  };
+}
+
+export interface FilaPresupuesto {
+  id: string;
+  nombre: string;
+  icono: string;
+  monto: number;
+  cuenta_id: string;
+  desde: string;
+  hasta: string | null;
+  categoria_ids: string[];
+}
+
+export function aPresupuesto(fila: FilaPresupuesto): Presupuesto {
+  return {
+    id: fila.id,
+    nombre: fila.nombre,
+    icono: fila.icono,
+    monto: Number(fila.monto),
+    cuentaId: fila.cuenta_id,
+    desde: fila.desde,
+    hasta: fila.hasta ?? undefined,
+    categoriaIds: fila.categoria_ids,
   };
 }

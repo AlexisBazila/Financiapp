@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { aplicarEscenario } from "@/lib/finanzas/escenarios";
 import { nombreMes } from "@/lib/finanzas/fechas";
-import { calcularPrevision, type MesPrevision } from "@/lib/finanzas/prevision";
+import { calcularPrevision, type Celda, type Certeza, type MesPrevision } from "@/lib/finanzas/prevision";
 import type { Datos, Escenario, Mes } from "@/lib/finanzas/tipos";
 import { pesos } from "./formato";
 
@@ -17,21 +17,23 @@ interface Props {
   meses: number;
   /** Primer mes que se muestra; por defecto, `desde`. */
   visibleDesde?: Mes;
+  /** Mes actual: lo que resta de los presupuestos se prevé desde acá. */
+  mesActual?: Mes;
 }
 
-export function VistaPrevision({ datos, escenarios: todos, desde, meses, visibleDesde = desde }: Props) {
+export function VistaPrevision({ datos, escenarios: todos, desde, meses, visibleDesde = desde, mesActual }: Props) {
   const escenarios = useMemo(() => todos.filter((e) => e.estado === "activo"), [todos]);
   const [seleccionado, setSeleccionado] = useState(BASE);
 
   const previsiones = useMemo(() => {
-    const opciones = { desde, meses };
+    const opciones = { desde, meses, mesActual };
     const visibles = (p: MesPrevision[]) => p.filter((m) => m.mes >= visibleDesde);
     const resultado: Record<string, MesPrevision[]> = { [BASE]: visibles(calcularPrevision(datos, opciones)) };
     for (const e of escenarios) {
       resultado[e.id] = visibles(calcularPrevision(aplicarEscenario(datos, todos, e.id), opciones));
     }
     return resultado;
-  }, [datos, todos, escenarios, desde, meses, visibleDesde]);
+  }, [datos, todos, escenarios, desde, meses, visibleDesde, mesActual]);
 
   const prevision = previsiones[seleccionado];
   const opciones = [{ id: BASE, nombre: "Plan base" }, ...escenarios];
@@ -106,25 +108,67 @@ function categorias(prevision: MesPrevision[], clave: "ingresosPorCategoria" | "
   return [...todas].sort((a, b) => total(b) - total(a));
 }
 
+/** Verde para ingresos y rojo para gastos: más claro si no está confirmado, más oscuro si ya se concilió. */
+const TONOS: Record<"ingreso" | "egreso", Record<Certeza, string>> = {
+  ingreso: {
+    planificado: "text-green-600/60 dark:text-green-400/60",
+    real: "text-green-700 dark:text-green-400",
+    conciliado: "font-semibold text-green-800 dark:text-green-300",
+  },
+  egreso: {
+    planificado: "text-red-500/60 dark:text-red-400/60",
+    real: "text-red-600 dark:text-red-400",
+    conciliado: "font-semibold text-red-800 dark:text-red-300",
+  },
+};
+const MARCA_CUOTAS = "rounded ring-1 ring-inset ring-violet-400/70 dark:ring-violet-400/50";
+
 function Grilla({ prevision }: { prevision: MesPrevision[] }) {
   const ingresos = categorias(prevision, "ingresosPorCategoria");
   const egresos = categorias(prevision, "egresosPorCategoria");
+  const presupuestos = [
+    ...new Map(prevision.flatMap((m) => m.presupuestos).map((p) => [p.id, p.nombre])),
+  ];
 
   const celda = "px-3 py-1.5 text-right tabular-nums whitespace-nowrap";
   const primera = "sticky left-0 bg-background px-3 py-1.5 text-left whitespace-nowrap";
 
-  const fila = (titulo: string, valores: number[], clase = "") => (
+  const fila = (
+    titulo: string,
+    valores: number[],
+    clase = "",
+    tono?: (v: number, i: number) => string,
+  ) => (
     <tr key={titulo} className={clase}>
       <th scope="row" className={`${primera} font-normal`}>
         {titulo}
       </th>
       {valores.map((v, i) => (
-        <td key={i} className={`${celda} ${v < 0 ? "text-red-600" : ""}`}>
+        <td key={i} className={`${celda} ${tono ? tono(v, i) : v < 0 ? "text-red-600" : ""}`}>
           {v === 0 ? "–" : pesos(v)}
         </td>
       ))}
     </tr>
   );
+  const filaCategoria = (tipo: "ingreso" | "egreso", c: string) => {
+    const clave = tipo === "ingreso" ? "ingresosPorCategoria" : "egresosPorCategoria";
+    return (
+      <tr key={`${tipo}:${c}`}>
+        <th scope="row" className={`${primera} font-normal`}>
+          {c}
+        </th>
+        {prevision.map((m) => {
+          const v = m[clave][c] ?? 0;
+          const info: Celda | undefined = m.celdas[`${tipo}:${c}`];
+          return (
+            <td key={m.mes} className={`${celda} ${info ? TONOS[tipo][info.certeza] : ""}`}>
+              <span className={info?.cuotas ? `${MARCA_CUOTAS} px-1.5 py-0.5` : ""}>{v === 0 ? "–" : pesos(v)}</span>
+            </td>
+          );
+        })}
+      </tr>
+    );
+  };
   const separador = (titulo: string) => (
     <tr key={`sep-${titulo}`}>
       <th
@@ -136,6 +180,9 @@ function Grilla({ prevision }: { prevision: MesPrevision[] }) {
     </tr>
   );
   const total = "border-t border-black/10 font-semibold dark:border-white/15";
+  const verde = () => "text-green-700 dark:text-green-400";
+  const rojo = () => "text-red-700 dark:text-red-400";
+  const signo = (v: number) => (v < 0 ? "text-red-600" : v > 0 ? "text-green-700 dark:text-green-400" : "");
 
   return (
     <section>
@@ -154,34 +201,52 @@ function Grilla({ prevision }: { prevision: MesPrevision[] }) {
           </thead>
           <tbody>
             {separador("Ingresos")}
-            {ingresos.map((c) =>
-              fila(
-                c,
-                prevision.map((m) => m.ingresosPorCategoria[c] ?? 0),
-              ),
-            )}
+            {ingresos.map((c) => filaCategoria("ingreso", c))}
             {fila(
               "Total ingresos",
               prevision.map((m) => m.ingresos),
               total,
+              verde,
             )}
             {separador("Egresos")}
-            {egresos.map((c) =>
-              fila(
-                c,
-                prevision.map((m) => m.egresosPorCategoria[c] ?? 0),
-              ),
-            )}
+            {egresos.map((c) => filaCategoria("egreso", c))}
             {fila(
               "Total egresos",
               prevision.map((m) => m.egresos),
               total,
+              rojo,
             )}
             {fila(
               "Resultado del mes",
               prevision.map((m) => m.neto),
               total,
+              signo,
             )}
+            {presupuestos.length > 0 && separador("Presupuestos")}
+            {presupuestos.map(([id, nombre]) => {
+              const de = (m: MesPrevision) => m.presupuestos.find((p) => p.id === id);
+              return (
+                <Fragment key={id}>
+                  {fila(
+                    `${nombre} (presupuesto)`,
+                    prevision.map((m) => de(m)?.monto ?? 0),
+                    "font-semibold",
+                  )}
+                  {fila(
+                    "· gastado",
+                    prevision.map((m) => de(m)?.gastado ?? 0),
+                    "",
+                    rojo,
+                  )}
+                  {fila(
+                    "· resto",
+                    prevision.map((m) => de(m)?.resto ?? 0),
+                    "",
+                    signo,
+                  )}
+                </Fragment>
+              );
+            })}
             {separador("Cuentas al cierre")}
             {fila(
               "Disponible",
@@ -207,9 +272,24 @@ function Grilla({ prevision }: { prevision: MesPrevision[] }) {
           </tbody>
         </table>
       </div>
-      <p className="mt-2 text-xs text-black/50 dark:text-white/50">
-        Las compras con tarjeta cuentan el mes en que se paga el resumen.
-      </p>
+      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-black/60 dark:text-white/60">
+        <span>
+          <span className={TONOS.egreso.planificado}>■</span>
+          <span className={TONOS.ingreso.planificado}>■</span> sin confirmar
+        </span>
+        <span>
+          <span className={TONOS.egreso.real}>■</span>
+          <span className={TONOS.ingreso.real}>■</span> confirmado
+        </span>
+        <span>
+          <span className={TONOS.egreso.conciliado}>■</span>
+          <span className={TONOS.ingreso.conciliado}>■</span> conciliado
+        </span>
+        <span>
+          <span className={`${MARCA_CUOTAS} px-1.5`}>123</span> incluye cuotas
+        </span>
+        <span>Las compras con tarjeta cuentan el mes en que se paga el resumen.</span>
+      </div>
     </section>
   );
 }

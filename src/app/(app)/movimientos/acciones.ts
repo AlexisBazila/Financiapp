@@ -57,6 +57,7 @@ export async function guardarMovimiento(base: Base | null, _: Resultado, form: F
     cuenta_destino_id: tipo === "transferencia" ? destinoId : null,
     ...categoria,
     descripcion: texto(form, "descripcion"),
+    contraparte: tipo === "transferencia" ? null : texto(form, "contraparte").slice(0, 80) || null,
     estado,
     // Lo que no pasó todavía no puede estar conciliado.
     ...(estado === "real" ? {} : { conciliado: false }),
@@ -89,6 +90,7 @@ export async function marcar(mov: Movimiento, guardado: boolean, cambio: { conci
         cuenta_destino_id: mov.cuentaDestinoId ?? null,
         categoria: mov.categoria ?? null,
         categoria_id: mov.categoriaId ?? null,
+        contraparte: mov.contraparte ?? null,
         origen: mov.origen,
         mes_resumen: mov.mesResumen ?? null,
         ...marcas,
