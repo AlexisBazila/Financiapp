@@ -6,14 +6,16 @@ import { salir } from "../login/acciones";
 const SECCIONES = [
   { href: "/", nombre: "Previsión" },
   { href: "/movimientos", nombre: "Movimientos" },
+  { href: "/plan", nombre: "Plan" },
   { href: "/cuentas", nombre: "Cuentas" },
+  { href: "/categorias", nombre: "Categorías" },
 ];
 
 export default function LayoutApp({ children }: LayoutProps<"/">) {
   return (
     <div className="flex flex-1 flex-col">
       <nav className="border-b border-black/10 dark:border-white/15">
-        <div className="mx-auto flex w-full max-w-6xl items-center gap-4 overflow-x-auto px-4 py-3 text-sm sm:px-8">
+        <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 text-sm sm:px-8">
           <span className="font-semibold">Financiapp</span>
           {SECCIONES.map((s) => (
             <Link key={s.href} href={s.href} className={`whitespace-nowrap hover:underline ${textoSuave}`}>

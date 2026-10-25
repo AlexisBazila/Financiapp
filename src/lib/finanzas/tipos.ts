@@ -67,7 +67,10 @@ export interface Movimiento {
   cuentaId: string;
   /** Solo en transferencias. */
   cuentaDestinoId?: string;
+  /** Nombre con el que se agrupa en la previsión (la categoría principal). */
   categoria?: string;
+  /** Categoría o subcategoría elegida. */
+  categoriaId?: string;
   estado: Estado;
   origen: Origen;
   /** Solo en compras con tarjeta: resumen en el que cae, si ya se conoce. */
@@ -78,6 +81,7 @@ export interface PlanCuotas {
   id: string;
   descripcion: string;
   categoria: string;
+  categoriaId?: string;
   cuentaId: string;
   fechaCompra: Fecha;
   /** Precio de contado. */
@@ -91,6 +95,7 @@ export interface Prestamo {
   id: string;
   descripcion: string;
   categoria: string;
+  categoriaId?: string;
   /** Cuenta desde la que se pagan las cuotas. */
   cuentaId: string;
   capital: Centavos;
@@ -108,6 +113,7 @@ export interface Recurrente {
   descripcion: string;
   tipo: "ingreso" | "egreso";
   categoria: string;
+  categoriaId?: string;
   cuentaId: string;
   montoEstimado: Centavos;
   diaDelMes: number;

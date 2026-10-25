@@ -39,6 +39,7 @@ export interface FilaMovimiento {
   cuenta_id: string;
   cuenta_destino_id: string | null;
   categoria: string | null;
+  categoria_id: string | null;
   estado: Movimiento["estado"];
   origen: Origen;
   mes_resumen: string | null;
@@ -48,6 +49,7 @@ export interface FilaPlanCuotas {
   id: string;
   descripcion: string;
   categoria: string;
+  categoria_id: string | null;
   cuenta_id: string;
   fecha_compra: string;
   monto_total: number;
@@ -59,6 +61,7 @@ export interface FilaPrestamo {
   id: string;
   descripcion: string;
   categoria: string;
+  categoria_id: string | null;
   cuenta_id: string;
   capital: number;
   primera_cuota: string;
@@ -73,6 +76,7 @@ export interface FilaRecurrente {
   descripcion: string;
   tipo: Recurrente["tipo"];
   categoria: string;
+  categoria_id: string | null;
   cuenta_id: string;
   monto_estimado: number;
   dia_del_mes: number;
@@ -120,6 +124,7 @@ export function aMovimiento(fila: FilaMovimiento): Movimiento {
     cuentaId: fila.cuenta_id,
     cuentaDestinoId: fila.cuenta_destino_id ?? undefined,
     categoria: fila.categoria ?? undefined,
+    categoriaId: fila.categoria_id ?? undefined,
     estado: fila.estado,
     origen: fila.origen,
     mesResumen: fila.mes_resumen ?? undefined,
@@ -131,6 +136,7 @@ export function aPlanCuotas(fila: FilaPlanCuotas): PlanCuotas {
     id: fila.id,
     descripcion: fila.descripcion,
     categoria: fila.categoria,
+    categoriaId: fila.categoria_id ?? undefined,
     cuentaId: fila.cuenta_id,
     fechaCompra: fila.fecha_compra,
     montoTotal: Number(fila.monto_total),
@@ -144,6 +150,7 @@ export function aPrestamo(fila: FilaPrestamo): Prestamo {
     id: fila.id,
     descripcion: fila.descripcion,
     categoria: fila.categoria,
+    categoriaId: fila.categoria_id ?? undefined,
     cuentaId: fila.cuenta_id,
     capital: Number(fila.capital),
     primeraCuota: fila.primera_cuota,
@@ -160,6 +167,7 @@ export function aRecurrente(fila: FilaRecurrente): Recurrente {
     descripcion: fila.descripcion,
     tipo: fila.tipo,
     categoria: fila.categoria,
+    categoriaId: fila.categoria_id ?? undefined,
     cuentaId: fila.cuenta_id,
     montoEstimado: Number(fila.monto_estimado),
     diaDelMes: fila.dia_del_mes,

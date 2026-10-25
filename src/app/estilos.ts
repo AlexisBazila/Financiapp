@@ -2,7 +2,7 @@
 
 export const etiqueta = "flex flex-col gap-1 text-sm";
 export const campo =
-  "rounded-lg border border-black/15 bg-background px-3 py-2 text-base outline-none focus:border-foreground dark:border-white/20";
+  "min-w-0 rounded-lg border border-black/15 bg-background px-3 py-2 text-base outline-none focus:border-foreground dark:border-white/20";
 export const boton =
   "rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50";
 export const botonSecundario =
