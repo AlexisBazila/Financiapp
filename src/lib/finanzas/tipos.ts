@@ -195,6 +195,8 @@ export interface CuotaDeuda {
   monto: Centavos;
   /** Mes en el que se planea pagarla; se puede mover y juntar varias en un mismo mes. */
   mes: Mes;
+  /** Vencimiento original, como figura en el detalle del banco. */
+  vencimiento?: Fecha;
 }
 
 /**

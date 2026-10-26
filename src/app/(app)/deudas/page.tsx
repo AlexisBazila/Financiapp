@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { cargarHogar } from "@/lib/datos/cargar";
-import { hoy as hoyAR, mesDe, sumarMeses } from "@/lib/finanzas/fechas";
+import { hoy as hoyAR, mesDe } from "@/lib/finanzas/fechas";
 import { mesDeGasto } from "@/lib/finanzas/prevision";
 import type { Cuenta, CuotaDeuda, Deuda, Movimiento } from "@/lib/finanzas/tipos";
 import { requerirUsuario } from "@/lib/supabase/servidor";
 import { caja, textoSuave } from "../../estilos";
 import { pesosExactos } from "../../formato";
 import { diaMes } from "../cuentas/totales-tarjeta";
-import { AgregarCuota, BorrarDeuda, FormularioDeuda, MesDeuda } from "./formularios";
+import { BorrarDeuda, EditarCuotas, FormularioDeuda, MesDeuda } from "./formularios";
 
 /** Cuotas pagadas (con su movimiento real) y pendientes agrupadas por el mes en que se planea pagarlas. */
 function situacion(deuda: Deuda, movimientos: Movimiento[], cuentas: Map<string, Cuenta>) {
@@ -54,8 +54,9 @@ export default async function Deudas() {
         <h1 className="text-2xl font-semibold">Deudas</h1>
         <p className={`mt-1 text-sm ${textoSuave}`}>
           Cuotas que pagás cuando te conviene, como la patente atrasada. Cada cuota va en un mes, y podés pasarla al
-          mes anterior o al siguiente con las flechas, o juntar varias en el mismo mes. La previsión las cuenta como
-          gasto planificado de ese mes; cuando las pagás quedan como movimiento real.
+          mes anterior o al siguiente con las flechas, o juntar varias en el mismo mes. Con ✎ cambiás el monto de
+          una cuota, y con ✎ Editar cuotas las cambiás todas juntas. La previsión las cuenta como gasto planificado
+          de su mes; cuando las pagás quedan como movimiento real.
         </p>
       </div>
 
@@ -63,7 +64,7 @@ export default async function Deudas() {
         const { pagadas, meses } = situacion(d, datos.movimientos, cuentas);
         const restan = meses.reduce((s, [, cs]) => s + cs.reduce((t, c) => t + c.monto, 0), 0);
         const pagado = pagadas.reduce((s, p) => s + p.mov.monto, 0);
-        const ultimo = meses.at(-1)?.[0] ?? mesActual;
+        const total = Math.max(0, ...d.cuotas.map((c) => c.numero));
         return (
           <section key={d.id} className="flex flex-col gap-3">
             <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
@@ -85,7 +86,7 @@ export default async function Deudas() {
                     deudaId={d.id}
                     mes={mes}
                     cuotas={cuotas}
-                    total={d.cuotas.length}
+                    total={total}
                     atrasado={mes < mesActual}
                     hoy={hoy}
                   />
@@ -93,7 +94,12 @@ export default async function Deudas() {
               </ul>
             )}
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-              <AgregarCuota deudaId={d.id} mesSugerido={sumarMeses(ultimo, 1)} montoSugerido={d.cuotas.at(-1)?.monto} />
+              <EditarCuotas
+                deudaId={d.id}
+                cuotas={meses.flatMap(([, cs]) => cs)}
+                total={total}
+                mesActual={mesActual}
+              />
             </div>
             {pagadas.length > 0 && (
               <details className="text-sm">
@@ -105,7 +111,7 @@ export default async function Deudas() {
                     <li key={cuota.numero} className="flex gap-3">
                       <span className="text-green-700 dark:text-green-400">✓</span>
                       <span>
-                        Cuota {cuota.numero}/{d.cuotas.length}
+                        Cuota {cuota.numero}/{total}
                       </span>
                       <span className={textoSuave}>{diaMes(mov.fecha)}</span>
                       <span className="tabular-nums">$ {pesosExactos(mov.monto)}</span>

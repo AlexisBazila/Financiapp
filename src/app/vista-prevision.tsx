@@ -543,7 +543,8 @@ function Grilla({
                   {fila(
                     `${nombre} (presupuesto)`,
                     (m: MesPrevision) => de(m)?.monto ?? 0,
-                    "font-semibold",
+                    // Una línea arriba de cada presupuesto, para ver dónde termina el anterior.
+                    "font-semibold [&>*]:border-t [&>*]:border-black/15 [&>*]:pt-3 dark:[&>*]:border-white/20",
                   )}
                   {fila(
                     "· gastado",

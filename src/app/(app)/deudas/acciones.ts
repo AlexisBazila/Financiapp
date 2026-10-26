@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { categoriaElegida } from "@/lib/datos/categoria-elegida";
-import { entero, pesosACentavos, texto } from "@/lib/datos/formularios";
+import { entero, leerCuotas, pesosACentavos, texto } from "@/lib/datos/formularios";
 import { sumarMeses } from "@/lib/finanzas/fechas";
 import type { CuotaDeuda } from "@/lib/finanzas/tipos";
 import { requerirUsuario } from "@/lib/supabase/servidor";
@@ -15,16 +15,27 @@ export interface Resultado {
 const MES = /^\d{4}-(0[1-9]|1[0-2])$/;
 const FECHA = /^\d{4}-\d{2}-\d{2}$/;
 
+/** Montos de las cuotas: pegados uno por línea (con su vencimiento, si está) o N iguales. */
+function cuotasDelFormulario(form: FormData): { monto: number; vencimiento?: string }[] | string {
+  if (texto(form, "modo") === "lista") {
+    return leerCuotas(texto(form, "lista")) ?? "Pegá las cuotas, una por línea, con su monto.";
+  }
+  const cantidad = entero(form, "cantidad");
+  const monto = pesosACentavos(texto(form, "monto"));
+  if (!cantidad || cantidad > 120) return "La cantidad de cuotas va de 1 a 120.";
+  if (!monto || monto <= 0) return "El monto de cada cuota tiene que ser mayor a cero.";
+  return Array.from({ length: cantidad }, () => ({ monto }));
+}
+
 export async function crearDeuda(_: Resultado, form: FormData): Promise<Resultado> {
   const descripcion = texto(form, "descripcion");
-  const cantidad = entero(form, "cantidad");
   const porMes = entero(form, "por_mes") ?? 1;
-  const monto = pesosACentavos(texto(form, "monto"));
   const desde = texto(form, "desde");
   const dia = entero(form, "dia_del_mes");
   if (!descripcion) return { error: "Poné un nombre, por ejemplo Patente." };
-  if (!cantidad || cantidad > 120) return { error: "La cantidad de cuotas va de 1 a 120." };
-  if (!monto || monto <= 0) return { error: "El monto de cada cuota tiene que ser mayor a cero." };
+  const montos = cuotasDelFormulario(form);
+  if (typeof montos === "string") return { error: montos };
+  if (montos.length > 120) return { error: "Son más de 120 cuotas." };
   if (!MES.test(desde)) return { error: "Elegí el mes de la primera cuota." };
   if (porMes < 1 || porMes > 12) return { error: "Las cuotas por mes van de 1 a 12." };
   if (!dia || dia > 31) return { error: "El día va del 1 al 31." };
@@ -32,9 +43,9 @@ export async function crearDeuda(_: Resultado, form: FormData): Promise<Resultad
   const categoria = await categoriaElegida(supabase, form, "egreso");
   if ("error" in categoria) return categoria;
 
-  const cuotas: CuotaDeuda[] = Array.from({ length: cantidad }, (_, k) => ({
+  const cuotas: CuotaDeuda[] = montos.map((c, k) => ({
     numero: k + 1,
-    monto,
+    ...c,
     mes: sumarMeses(desde, Math.floor(k / porMes)),
   }));
   const { error } = await supabase.from("deudas").insert({
@@ -92,15 +103,56 @@ export async function editarCuota(deudaId: string, numero: number, _: Resultado,
   return cambiarCuotas(deudaId, (cuotas) => cuotas.map((c) => (c.numero === numero ? { ...c, monto } : c)));
 }
 
-export async function agregarCuota(deudaId: string, _: Resultado, form: FormData): Promise<Resultado> {
-  const monto = pesosACentavos(texto(form, "monto"));
-  const mes = texto(form, "mes");
-  if (!monto || monto <= 0) return { error: "El monto tiene que ser mayor a cero." };
-  if (!MES.test(mes)) return { error: "Elegí un mes." };
-  return cambiarCuotas(deudaId, (cuotas) => [
-    ...cuotas,
-    { numero: Math.max(0, ...cuotas.map((c) => c.numero)) + 1, monto, mes },
-  ]);
+/**
+ * Guarda de una vez el monto y el mes de las cuotas pendientes (`numeros`), quita las marcadas y agrega las
+ * pegadas en `nuevas`, a partir del mes siguiente a la última.
+ */
+export async function guardarCuotas(deudaId: string, numeros: number[], _: Resultado, form: FormData): Promise<Resultado> {
+  const cambios = new Map<number, { monto: number; mes: string } | null>();
+  for (const n of numeros) {
+    if (form.get(`quitar_${n}`) === "on") {
+      cambios.set(n, null);
+      continue;
+    }
+    const monto = pesosACentavos(texto(form, `monto_${n}`));
+    const mes = texto(form, `mes_${n}`);
+    if (!monto || monto <= 0) return { error: `El monto de la cuota ${n} tiene que ser mayor a cero.` };
+    if (!MES.test(mes)) return { error: `Elegí el mes de la cuota ${n}.` };
+    cambios.set(n, { monto, mes });
+  }
+  const pegadas = texto(form, "nuevas") ? leerCuotas(texto(form, "nuevas")) : [];
+  if (!pegadas) return { error: "No encontré montos en las cuotas nuevas; poné una por línea." };
+  const porMes = entero(form, "nuevas_por_mes") ?? 1;
+  if (porMes < 1 || porMes > 12) return { error: "Las cuotas por mes van de 1 a 12." };
+
+  // Lo guardado como planificado desde Movimientos deja de valer: manda lo que se puso acá.
+  const { supabase } = await requerirUsuario();
+  const { error: errorBorrado } = await supabase
+    .from("movimientos")
+    .delete()
+    .eq("origen->>tipo", "deuda")
+    .eq("origen->>deudaId", deudaId)
+    .in("origen->>numero", numeros.map(String))
+    .neq("estado", "real");
+  if (errorBorrado) return { error: `No se pudo guardar: ${errorBorrado.message}` };
+
+  return cambiarCuotas(deudaId, (cuotas) => {
+    const quedan = cuotas.flatMap((c) => {
+      const cambio = cambios.get(c.numero);
+      if (cambio === null) return [];
+      return [cambio ? { ...c, ...cambio } : c];
+    });
+    const ultimoNumero = Math.max(0, ...cuotas.map((c) => c.numero));
+    const ultimoMes = quedan.map((c) => c.mes).sort().at(-1) ?? texto(form, "mes_actual");
+    return [
+      ...quedan,
+      ...pegadas.map((c, k) => ({
+        numero: ultimoNumero + k + 1,
+        ...c,
+        mes: sumarMeses(ultimoMes, 1 + Math.floor(k / porMes)),
+      })),
+    ];
+  });
 }
 
 /** Registra el pago de una o varias cuotas: un movimiento real por cuota, con lo que se pagó de cada una. */
@@ -117,7 +169,7 @@ export async function pagarCuotas(deudaId: string, numeros: number[], _: Resulta
     .eq("id", deudaId)
     .single();
   if (errorLectura || !d) return { error: "No se encontró la deuda." };
-  const total = (d.cuotas as CuotaDeuda[]).length;
+  const total = Math.max(0, ...(d.cuotas as CuotaDeuda[]).map((c) => c.numero));
   const origen = (numero: number) => ({ tipo: "deuda", deudaId, numero, total });
 
   // Si alguna se había guardado como planificada, el pago la reemplaza.

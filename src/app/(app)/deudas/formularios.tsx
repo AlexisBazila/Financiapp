@@ -9,10 +9,10 @@ import { pesosExactos } from "../../formato";
 import { SelectorCategoria } from "../categorias/selector";
 import { CampoContraparte } from "../movimientos/contraparte";
 import {
-  agregarCuota,
   borrarDeuda,
   crearDeuda,
   editarCuota,
+  guardarCuotas,
   moverCuota,
   pagarCuotas,
   type Resultado,
@@ -49,6 +49,7 @@ export function FormularioDeuda({
   mesActual: string;
 }) {
   const [estado, accion, pendiente] = useActionState(crearDeuda, {});
+  const [modo, setModo] = useState("lista");
   return (
     <form action={accion} className="grid gap-4 sm:grid-cols-3">
       <label className={etiqueta}>
@@ -68,13 +69,35 @@ export function FormularioDeuda({
         </select>
       </label>
       <label className={etiqueta}>
-        Cantidad de cuotas
-        <input name="cantidad" type="number" min={1} max={120} required className={campo} />
+        Cuotas
+        <select name="modo" value={modo} onChange={(e) => setModo(e.target.value)} className={campo}>
+          <option value="lista">Cada una con su monto</option>
+          <option value="iguales">Todas del mismo monto</option>
+        </select>
       </label>
-      <label className={etiqueta}>
-        Monto de cada cuota
-        <input name="monto" inputMode="decimal" required placeholder="$" className={campo} />
-      </label>
+      {modo === "lista" ? (
+        <label className={`${etiqueta} sm:col-span-2`}>
+          Montos, uno por línea. Podés pegar la tabla del banco: se toma el vencimiento y el total de cada fila.
+          <textarea
+            name="lista"
+            rows={5}
+            required
+            placeholder={"CUOTA 10/03/2026 22.372,00 0,00 2.237,20 8.048,56 32.657,76\n31.192,69\n…"}
+            className={`${campo} font-mono text-sm`}
+          />
+        </label>
+      ) : (
+        <>
+          <label className={etiqueta}>
+            Cantidad de cuotas
+            <input name="cantidad" type="number" min={1} max={120} required className={campo} />
+          </label>
+          <label className={etiqueta}>
+            Monto de cada cuota
+            <input name="monto" inputMode="decimal" required placeholder="$" className={campo} />
+          </label>
+        </>
+      )}
       <label className={etiqueta}>
         Primera cuota en
         <input name="desde" type="month" required defaultValue={mesActual} className={campo} />
@@ -137,8 +160,16 @@ function Cuota({ deudaId, cuota, total }: { deudaId: string; cuota: CuotaDeuda; 
       <button type="button" disabled={pendiente} onClick={() => mover(-1)} className={flecha} aria-label={`Pasar la cuota ${cuota.numero} al mes anterior`}>
         ◀
       </button>
-      <button type="button" onClick={() => setEditando(true)} className="hover:underline">
+      <span title={cuota.vencimiento ? `Vencía el ${fechaCorta(cuota.vencimiento)}` : undefined}>
         Cuota {cuota.numero}/{total} · <span className="tabular-nums">$ {pesosExactos(cuota.monto)}</span>
+      </span>
+      <button
+        type="button"
+        onClick={() => setEditando(true)}
+        className={flecha}
+        aria-label={`Cambiar el monto o el mes de la cuota ${cuota.numero}`}
+      >
+        ✎
       </button>
       <button type="button" disabled={pendiente} onClick={() => mover(1)} className={flecha} aria-label={`Pasar la cuota ${cuota.numero} al mes siguiente`}>
         ▶
@@ -225,40 +256,102 @@ export function MesDeuda({
   );
 }
 
-export function AgregarCuota({ deudaId, mesSugerido, montoSugerido }: { deudaId: string; mesSugerido: string; montoSugerido?: number }) {
+/** "10/03/26" */
+const fechaCorta = (f: string) => `${f.slice(8, 10)}/${f.slice(5, 7)}/${f.slice(2, 4)}`;
+
+/** Tabla para cambiar de una vez el monto y el mes de todas las cuotas pendientes, quitar o agregar. */
+export function EditarCuotas({
+  deudaId,
+  cuotas,
+  total,
+  mesActual,
+}: {
+  deudaId: string;
+  cuotas: CuotaDeuda[];
+  total: number;
+  mesActual: string;
+}) {
   const [abierto, setAbierto] = useState(false);
-  const [estado, accion, pendiente] = useActionState(agregarCuota.bind(null, deudaId), {});
+  const numeros = cuotas.map((c) => c.numero);
+  const [estado, accion, pendiente] = useActionState(guardarCuotas.bind(null, deudaId, numeros), {});
   useAlTerminar(estado, () => setAbierto(false));
   if (!abierto) {
     return (
       <button type="button" onClick={() => setAbierto(true)} className="text-sm hover:underline">
-        ＋ Agregar cuota
+        ✎ Editar cuotas
       </button>
     );
   }
   return (
-    <form action={accion} className="flex flex-wrap items-end gap-2">
-      <label className={etiqueta}>
-        Monto
-        <input
-          name="monto"
-          inputMode="decimal"
-          required
-          defaultValue={montoSugerido ? pesosExactos(montoSugerido) : undefined}
-          className={`${campo} w-32`}
-        />
-      </label>
-      <label className={etiqueta}>
-        Mes
-        <input name="mes" type="month" required defaultValue={mesSugerido} className={campo} />
-      </label>
-      <button type="submit" disabled={pendiente} className={boton}>
-        Agregar
-      </button>
-      <button type="button" onClick={() => setAbierto(false)} className={botonSecundario}>
-        Cancelar
-      </button>
-      <Mensaje estado={estado} />
+    <form action={accion} className="flex w-full flex-col gap-4 rounded-xl border border-black/10 p-4 dark:border-white/15">
+      <input type="hidden" name="mes_actual" value={mesActual} />
+      {cuotas.length > 0 && (
+        <div className="overflow-x-auto">
+          <table className="text-sm">
+            <thead>
+              <tr className={`text-left text-xs ${textoSuave}`}>
+                <th className="py-1 pr-3 font-normal">Cuota</th>
+                <th className="py-1 pr-3 font-normal">Vencía</th>
+                <th className="py-1 pr-3 font-normal">Monto</th>
+                <th className="py-1 pr-3 font-normal">Se paga en</th>
+                <th className="py-1 font-normal">Quitar</th>
+              </tr>
+            </thead>
+            <tbody>
+              {cuotas.map((c) => (
+                <tr key={c.numero}>
+                  <td className="py-1 pr-3 tabular-nums">
+                    {c.numero}/{total}
+                  </td>
+                  <td className={`py-1 pr-3 tabular-nums ${textoSuave}`}>{c.vencimiento ? fechaCorta(c.vencimiento) : "–"}</td>
+                  <td className="py-1 pr-3">
+                    <input
+                      name={`monto_${c.numero}`}
+                      inputMode="decimal"
+                      required
+                      defaultValue={pesosExactos(c.monto)}
+                      aria-label={`Monto de la cuota ${c.numero}`}
+                      className={`${campo} w-32 py-1`}
+                    />
+                  </td>
+                  <td className="py-1 pr-3">
+                    <input
+                      name={`mes_${c.numero}`}
+                      type="month"
+                      required
+                      defaultValue={c.mes}
+                      aria-label={`Mes de la cuota ${c.numero}`}
+                      className={`${campo} py-1`}
+                    />
+                  </td>
+                  <td className="py-1 text-center">
+                    <input name={`quitar_${c.numero}`} type="checkbox" aria-label={`Quitar la cuota ${c.numero}`} className="size-4" />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <div className="grid gap-4 sm:grid-cols-3">
+        <label className={`${etiqueta} sm:col-span-2`}>
+          Agregar cuotas (opcional): una por línea, o pegá la tabla del banco
+          <textarea name="nuevas" rows={3} className={`${campo} font-mono text-sm`} />
+        </label>
+        <label className={etiqueta}>
+          Cuotas nuevas por mes
+          <input name="nuevas_por_mes" type="number" min={1} max={12} defaultValue={1} className={campo} />
+        </label>
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <button type="submit" disabled={pendiente} className={boton}>
+          Guardar cuotas
+        </button>
+        <button type="button" onClick={() => setAbierto(false)} className={botonSecundario}>
+          Cancelar
+        </button>
+        <Mensaje estado={estado} />
+      </div>
     </form>
   );
 }
