@@ -33,12 +33,15 @@ function FormularioMovimiento({
   fechaSugerida,
   base,
   inicial,
+  tipoInicial = "egreso",
   alGuardar,
   alCancelar,
 }: Opciones & {
   fechaSugerida: string;
   base?: Base;
   inicial?: Movimiento;
+  /** Tipo con el que arranca un movimiento nuevo. */
+  tipoInicial?: string;
   alGuardar: () => void;
   alCancelar: () => void;
 }) {
@@ -46,7 +49,7 @@ function FormularioMovimiento({
   const tarjetas = cuentas.filter((c) => c.tarjeta);
   const esPagoDeTarjeta = (m: Movimiento) =>
     m.tipo === "transferencia" && tarjetas.some((t) => t.id === m.cuentaDestinoId);
-  const [tipo, setTipo] = useState<string>(inicial && esPagoDeTarjeta(inicial) ? "pago_tarjeta" : (inicial?.tipo ?? "egreso"));
+  const [tipo, setTipo] = useState<string>(inicial && esPagoDeTarjeta(inicial) ? "pago_tarjeta" : (inicial?.tipo ?? tipoInicial));
   const esPago = tipo === "pago_tarjeta";
   const esTransferencia = tipo === "transferencia" || esPago;
   const [tarjeta, setTarjeta] = useState(inicial?.cuentaDestinoId ?? tarjetas[0]?.id);
@@ -190,30 +193,59 @@ function FormularioMovimiento({
 }
 
 /** Botón "Nuevo movimiento" que despliega el formulario. */
-export function NuevoMovimiento({ fechaSugerida, ...opciones }: Opciones & { fechaSugerida: string }) {
-  const [abierto, setAbierto] = useState(false);
+const RAPIDOS = [
+  { tipo: "egreso", nombre: "− Gasto", clase: "bg-red-600 text-white hover:bg-red-700" },
+  { tipo: "ingreso", nombre: "＋ Ingreso", clase: "bg-green-700 text-white hover:bg-green-800" },
+  { tipo: "transferencia", nombre: "⇄ Transferencia", clase: "bg-sky-700 text-white hover:bg-sky-800" },
+];
+
+/**
+ * Botón para cargar un movimiento. Con `rapido`, un botón por tipo (gasto, ingreso, transferencia) que
+ * abre el formulario con ese tipo elegido.
+ */
+export function NuevoMovimiento({
+  fechaSugerida,
+  rapido = false,
+  ...opciones
+}: Opciones & { fechaSugerida: string; rapido?: boolean }) {
+  const [abierto, setAbierto] = useState<string | null>(null);
   const [guardados, setGuardados] = useState(0);
 
+  if (opciones.cuentas.length === 0) return null;
   if (!abierto) {
     return (
-      <div className="flex items-center gap-3">
-        <button type="button" onClick={() => setAbierto(true)} className={boton}>
-          ＋ Nuevo movimiento
-        </button>
+      <div className="flex flex-wrap items-center gap-2">
+        {rapido ? (
+          RAPIDOS.map((r) => (
+            <button
+              key={r.tipo}
+              type="button"
+              onClick={() => setAbierto(r.tipo)}
+              className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${r.clase}`}
+            >
+              {r.nombre}
+            </button>
+          ))
+        ) : (
+          <button type="button" onClick={() => setAbierto("egreso")} className={boton}>
+            ＋ Nuevo movimiento
+          </button>
+        )}
         {guardados > 0 && <p className="text-sm text-green-700 dark:text-green-400">Guardado.</p>}
       </div>
     );
   }
   return (
-    <div className="rounded-xl border border-black/10 p-5 dark:border-white/15">
+    <div className="w-full rounded-xl border border-black/10 p-5 dark:border-white/15">
       <FormularioMovimiento
         {...opciones}
+        tipoInicial={abierto}
         fechaSugerida={fechaSugerida}
         alGuardar={() => {
-          setAbierto(false);
+          setAbierto(null);
           setGuardados((n) => n + 1);
         }}
-        alCancelar={() => setAbierto(false)}
+        alCancelar={() => setAbierto(null)}
       />
     </div>
   );

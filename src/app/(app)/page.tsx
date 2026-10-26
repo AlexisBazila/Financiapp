@@ -5,12 +5,15 @@ import { hoy, mesDe, mesesEntre, nombreMes } from "@/lib/finanzas/fechas";
 import { requerirUsuario } from "@/lib/supabase/servidor";
 import { boton, textoSuave } from "../estilos";
 import { VistaPrevision } from "../vista-prevision";
+import { NuevoMovimiento } from "./movimientos/formularios";
+import { movimientosDelMes } from "./movimientos/opciones";
 
 const MESES_ADELANTE = 12;
 
 export default async function Prevision() {
   const { supabase } = await requerirUsuario();
-  const { hogar, datos, escenarios, categorias } = await cargarHogar(supabase);
+  const datosHogar = await cargarHogar(supabase);
+  const { hogar, datos, escenarios, categorias } = datosHogar;
   const subcategorias = Object.fromEntries(categorias.filter((c) => c.padreId).map((c) => [c.id, etiqueta(c)]));
 
   if (datos.cuentas.length === 0) {
@@ -36,7 +39,14 @@ export default async function Prevision() {
 
   return (
     <>
-      <h1 className="mb-6 text-2xl font-semibold">Previsión</h1>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+        <h1 className="text-2xl font-semibold">Previsión</h1>
+        <NuevoMovimiento
+          {...movimientosDelMes(datosHogar, mesActual, mesActual).opciones}
+          fechaSugerida={fecha}
+          rapido
+        />
+      </div>
       <VistaPrevision
         datos={datos}
         escenarios={escenarios}

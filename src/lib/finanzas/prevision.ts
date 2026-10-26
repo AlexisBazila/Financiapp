@@ -107,6 +107,10 @@ export interface MesPrevision {
    * solo lo transferido si no se cuenta lo planificado.
    */
   ahorroDelMes: Centavos;
+  /** El resto del mes anterior: lo que sobró sin asignar (positivo) o lo que faltó (negativo). */
+  sobranteAnterior: Centavos;
+  /** sobrante anterior + ingresos - egresos - ahorro del mes. Pasa al mes siguiente. */
+  resto: Centavos;
 }
 
 export interface OpcionesPrevision {
@@ -353,6 +357,7 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
   const tarjetas = datos.cuentas.filter((c) => c.tarjeta);
   /** Lo vencido y todavía no pagado de cada tarjeta. */
   const vencido: Record<string, Centavos> = Object.fromEntries(tarjetas.map((c) => [c.id, 0]));
+  let restoAnterior = 0;
 
   return meses.map((mes) => {
     const ingresosPorCategoria: Record<string, Centavos> = {};
@@ -464,6 +469,9 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
       });
     }
 
+    const sobranteAnterior = restoAnterior;
+    restoAnterior = sobranteAnterior + ingresos - egresos - ahorroDelMes;
+
     let disponible = 0;
     let disponible48h = 0;
     let reserva = 0;
@@ -503,6 +511,8 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
       presupuestos: presupuestosPorMes.get(mes) ?? [],
       objetivos,
       ahorroDelMes,
+      sobranteAnterior,
+      resto: restoAnterior,
     };
   });
 }

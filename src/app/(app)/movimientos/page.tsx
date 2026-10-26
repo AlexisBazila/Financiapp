@@ -6,23 +6,27 @@ import type { Movimiento } from "@/lib/finanzas/tipos";
 import { requerirUsuario } from "@/lib/supabase/servidor";
 import { textoSuave } from "../../estilos";
 import { pesosExactos } from "../../formato";
+import { filtrar, FormularioFiltros, hayFiltros, leerFiltros } from "./filtros";
 import { NuevoMovimiento } from "./formularios";
 import { movimientosDelMes } from "./opciones";
 import { Leyenda, ListaMovimientos, MES, SelectorMes, tituloMes } from "./lista";
 
 export default async function Movimientos({ searchParams }: PageProps<"/movimientos">) {
-  const { mes: pedido } = await searchParams;
+  const params = await searchParams;
+  const pedido = params.mes;
+  const filtros = leerFiltros(params);
   const actual = mesDe(hoy());
   const mes = typeof pedido === "string" && MES.test(pedido) ? pedido : actual;
 
   const { supabase } = await requerirUsuario();
   const hogar = await cargarHogar(supabase);
-  const { datos, categorias } = hogar;
+  const { datos, categorias, contrapartes } = hogar;
   const { opciones, pagosAutomaticos, ahorrosPrevistos } = movimientosDelMes(hogar, mes, actual);
 
-  const lista = [...expandir(datos, mes, mes), ...pagosAutomaticos, ...ahorrosPrevistos]
+  const delMes = [...expandir(datos, mes, mes), ...pagosAutomaticos, ...ahorrosPrevistos]
     .filter((m) => mesDe(m.fecha) === mes)
     .sort((a, b) => b.fecha.localeCompare(a.fecha) || a.descripcion.localeCompare(b.descripcion));
+  const lista = filtrar(delMes, filtros, categorias, datos.presupuestos ?? []);
   const suma = (tipo: Movimiento["tipo"]) => lista.filter((m) => m.tipo === tipo).reduce((s, m) => s + m.monto, 0);
   const sinConfirmar = lista.filter((m) => m.estado !== "real").length;
   const sinConciliar = lista.filter((m) => m.estado === "real" && !m.conciliado).length;
@@ -40,7 +44,14 @@ export default async function Movimientos({ searchParams }: PageProps<"/movimien
         )}
       </div>
 
-      <SelectorMes mes={mes} actual={actual} ruta="/movimientos" />
+      <SelectorMes
+        mes={mes}
+        actual={actual}
+        ruta="/movimientos"
+        consulta={Object.entries(filtros)
+          .map(([clave, valor]) => `&${clave}=${encodeURIComponent(valor)}`)
+          .join("")}
+      />
 
       <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
         <span>
@@ -52,8 +63,17 @@ export default async function Movimientos({ searchParams }: PageProps<"/movimien
         </span>
         <span className={textoSuave}>
           {sinConfirmar} sin confirmar · {sinConciliar} sin conciliar
+          {hayFiltros(filtros) && ` · ${lista.length} de ${delMes.length} con los filtros`}
         </span>
       </div>
+
+      <FormularioFiltros
+        filtros={filtros}
+        mes={mes}
+        categorias={categorias}
+        presupuestos={hogar.presupuestos}
+        contrapartes={contrapartes}
+      />
 
       <Leyenda />
 
@@ -63,7 +83,11 @@ export default async function Movimientos({ searchParams }: PageProps<"/movimien
         categorias={new Map(categorias.map((c) => [c.id, c]))}
         guardados={new Set(datos.movimientos.map((m) => m.id))}
         opciones={opciones}
-        vacio={`No hay movimientos en ${tituloMes(mes).toLowerCase()}.`}
+        vacio={
+          hayFiltros(filtros)
+            ? `Ningún movimiento de ${tituloMes(mes).toLowerCase()} coincide con los filtros.`
+            : `No hay movimientos en ${tituloMes(mes).toLowerCase()}.`
+        }
       />
     </div>
   );
