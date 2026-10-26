@@ -1,10 +1,19 @@
 "use client";
 
-import { useActionState, useId, useState } from "react";
+import { useActionState, useId, useState, useTransition } from "react";
+import { MONEDAS, simbolo } from "@/lib/datos/monedas";
 import type { Cuenta } from "@/lib/finanzas/tipos";
 import { boton, botonSecundario, campo, etiqueta } from "../../estilos";
 import { pesosExactos } from "../../formato";
-import { archivarCuenta, cambiarMesInicio, guardarCiclo, guardarCuenta, type Resultado } from "./acciones";
+import {
+  archivarCuenta,
+  cambiarMesInicio,
+  guardarCiclo,
+  guardarCotizacion,
+  guardarCuenta,
+  traerCotizacion,
+  type Resultado,
+} from "./acciones";
 
 function Mensaje({ estado, ok }: { estado: Resultado; ok: string }) {
   if (estado.error) return <p className="text-sm text-red-600">{estado.error}</p>;
@@ -25,6 +34,7 @@ export function FormularioCuenta({
 }) {
   const [estado, accion, pendiente] = useActionState(guardarCuenta.bind(null, inicial?.id ?? null), {});
   const [tipo, setTipo] = useState<string>(inicial?.tipo ?? "banco");
+  const [moneda, setMoneda] = useState(inicial?.moneda ?? "ARS");
   const esTarjeta = tipo === "tarjeta";
   const listaTitulares = useId();
   const pagos = cuentasPago.filter((c) => c.id !== inicial?.id);
@@ -52,7 +62,7 @@ export function FormularioCuenta({
         </select>
       </label>
       <label className={etiqueta}>
-        {esTarjeta ? "Resumen ya cerrado a pagar ese mes ($)" : "Saldo al inicio del mes ($)"}
+        {esTarjeta ? "Resumen ya cerrado a pagar ese mes ($)" : `Saldo al inicio del mes (${simbolo(moneda)})`}
         <input
           name="saldo"
           inputMode="decimal"
@@ -61,6 +71,16 @@ export function FormularioCuenta({
           className={campo}
         />
       </label>
+      {!esTarjeta && (
+        <label className={etiqueta}>
+          Moneda
+          <select name="moneda" value={moneda} onChange={(e) => setMoneda(e.target.value)} className={campo}>
+            <option value="ARS">Pesos ($)</option>
+            <option value="USD">Dólares (US$)</option>
+            <option value="EUR">Euros (€)</option>
+          </select>
+        </label>
+      )}
       <label className={etiqueta}>
         De quién es (opcional)
         <input
@@ -94,12 +114,14 @@ export function FormularioCuenta({
           Disponibilidad
           <select
             name="disponibilidad"
-            defaultValue={inicial?.tipo === tipo ? inicial.disponibilidad : tipo === "inversion" ? "48h" : "inmediata"}
-            key={tipo}
+            defaultValue={
+              inicial?.tipo === tipo ? inicial.disponibilidad : tipo === "inversion" || moneda !== "ARS" ? "48h" : "inmediata"
+            }
+            key={`${tipo}-${moneda}`}
             className={campo}
           >
             <option value="inmediata">Disponible para gastar</option>
-            <option value="48h">Disponible con espera (48 h)</option>
+            <option value="48h">Disponible no inmediato (FCI, dólares, plazo fijo…)</option>
             <option value="reserva">Reserva de ahorro</option>
           </select>
         </label>
@@ -208,5 +230,54 @@ export function BotonArchivar({ id }: { id: string }) {
     >
       Archivar
     </button>
+  );
+}
+
+/** Tipo de cambio de una moneda: a mano, o traído de una cotización publicada. */
+export function FormularioCotizacion({ moneda, valor }: { moneda: string; valor?: number }) {
+  const [estado, accion, pendiente] = useActionState(guardarCotizacion.bind(null, moneda), {});
+  const [trayendo, empezar] = useTransition();
+  const [traida, setTraida] = useState<Resultado>({});
+  const traer = (casa: string) =>
+    empezar(async () => {
+      setTraida(await traerCotizacion(moneda, casa));
+    });
+  const casas = moneda === "USD" ? [["oficial", "Oficial (BCRA)"], ["bolsa", "MEP"], ["blue", "Blue"]] : [["oficial", "Oficial"]];
+
+  return (
+    <div className="flex flex-col gap-3">
+      <form action={accion} className="flex flex-wrap items-end gap-3">
+        <label className={etiqueta}>
+          1 {MONEDAS[moneda as keyof typeof MONEDAS] ?? moneda} = $
+          <input
+            name="valor"
+            inputMode="decimal"
+            required
+            defaultValue={valor ? valor.toLocaleString("es-AR") : undefined}
+            placeholder="1.400"
+            className={`${campo} w-36`}
+          />
+        </label>
+        <button type="submit" disabled={pendiente} className={botonSecundario}>
+          Guardar
+        </button>
+        <Mensaje estado={estado} ok="Guardado." />
+      </form>
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <span>Traer cotización de compra:</span>
+        {casas.map(([casa, nombre]) => (
+          <button
+            key={casa}
+            type="button"
+            disabled={trayendo}
+            onClick={() => traer(casa)}
+            className="rounded-full border border-black/15 px-3 py-1 hover:bg-black/5 disabled:opacity-50 dark:border-white/20 dark:hover:bg-white/10"
+          >
+            {nombre}
+          </button>
+        ))}
+        <Mensaje estado={traida} ok="Actualizada." />
+      </div>
+    </div>
   );
 }

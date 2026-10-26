@@ -49,6 +49,10 @@ export interface Cuenta {
   saldoInicial: Centavos;
   /** Persona de la casa a la que pertenece. */
   titular?: string;
+  /** Código de la moneda (ARS si falta). Saldos y movimientos de la cuenta están en esa moneda. */
+  moneda?: string;
+  /** Pesos por unidad de la moneda, para sumarla con lo demás (1 si falta). */
+  cambio?: number;
   tarjeta?: ConfigTarjeta;
 }
 

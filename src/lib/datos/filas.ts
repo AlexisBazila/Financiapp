@@ -24,6 +24,7 @@ export interface FilaCuenta {
   archivada: boolean;
   titular: string | null;
   pago_automatico: boolean;
+  moneda: string;
 }
 
 export interface FilaCiclo {
@@ -101,7 +102,15 @@ export interface FilaEscenario {
   cambios: Escenario["cambios"];
 }
 
-export function aCuenta(fila: FilaCuenta, ciclos: FilaCiclo[]): Cuenta {
+export interface FilaCotizacion {
+  moneda: string;
+  valor: number | string;
+  fuente: string;
+  actualizada: string;
+}
+
+/** `cambios`: pesos por unidad de cada moneda distinta del peso. */
+export function aCuenta(fila: FilaCuenta, ciclos: FilaCiclo[], cambios: Record<string, number> = {}): Cuenta {
   const cuenta: Cuenta = {
     id: fila.id,
     nombre: fila.nombre,
@@ -109,6 +118,7 @@ export function aCuenta(fila: FilaCuenta, ciclos: FilaCiclo[]): Cuenta {
     disponibilidad: fila.disponibilidad,
     saldoInicial: Number(fila.saldo_inicial),
     titular: fila.titular ?? undefined,
+    ...(fila.moneda && fila.moneda !== "ARS" ? { moneda: fila.moneda, cambio: cambios[fila.moneda] ?? 1 } : {}),
   };
   if (fila.tipo === "tarjeta" && fila.dia_cierre && fila.dia_vencimiento && fila.cuenta_pago_id) {
     cuenta.tarjeta = {

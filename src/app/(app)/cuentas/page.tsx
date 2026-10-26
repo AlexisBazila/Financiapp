@@ -4,7 +4,34 @@ import type { Cuenta } from "@/lib/finanzas/tipos";
 import { requerirUsuario } from "@/lib/supabase/servidor";
 import { caja, textoSuave } from "../../estilos";
 import { pesosExactos } from "../../formato";
-import { BotonArchivar, FormularioCiclo, FormularioCuenta, FormularioMesInicio } from "./formularios";
+import { simbolo } from "@/lib/datos/monedas";
+import {
+  BotonArchivar,
+  FormularioCiclo,
+  FormularioCotizacion,
+  FormularioCuenta,
+  FormularioMesInicio,
+} from "./formularios";
+
+/** Saldo inicial en la moneda de la cuenta: verde si hay plata, rojo y negativo si es deuda. */
+function Saldo({ cuenta }: { cuenta: Cuenta }) {
+  // En una tarjeta el saldo es lo que se debe.
+  const valor = cuenta.tarjeta ? -cuenta.saldoInicial : cuenta.saldoInicial;
+  const color = valor > 0 ? "text-green-700 dark:text-green-400" : valor < 0 ? "text-red-600 dark:text-red-400" : "";
+  return (
+    <span className="flex flex-col items-end" title={cuenta.tarjeta ? "Resumen a pagar al inicio" : "Saldo al inicio"}>
+      <span className={`font-medium tabular-nums ${color}`}>
+        {valor < 0 ? "−" : ""}
+        {simbolo(cuenta.moneda)} {pesosExactos(Math.abs(valor))}
+      </span>
+      {cuenta.moneda && cuenta.cambio && (
+        <span className={`text-xs tabular-nums ${textoSuave}`}>
+          ≈ $ {pesosExactos(Math.round(Math.abs(valor) * cuenta.cambio))}
+        </span>
+      )}
+    </span>
+  );
+}
 
 /** Orden y título de cada grupo de la pantalla. */
 const GRUPOS: [Cuenta["tipo"], string][] = [
@@ -17,14 +44,15 @@ const GRUPOS: [Cuenta["tipo"], string][] = [
 
 const DISPONIBILIDAD: Record<string, string> = {
   inmediata: "Disponible",
-  "48h": "Disponible en 48 h",
+  "48h": "Disponible no inmediato",
   reserva: "Reserva de ahorro",
 };
 
 export default async function Cuentas() {
   const { supabase } = await requerirUsuario();
-  const { hogar, datos, cuentasActivas } = await cargarHogar(supabase);
+  const { hogar, datos, cuentasActivas, cotizaciones } = await cargarHogar(supabase);
   const activas = datos.cuentas.filter((c) => cuentasActivas.includes(c.id));
+  const monedas = [...new Set(activas.flatMap((c) => (c.moneda ? [c.moneda] : [])))];
   const cuentasPago = activas.filter((c) => !c.tarjeta).map((c) => ({ id: c.id, nombre: c.nombre }));
   const titulares = [...new Set(datos.cuentas.map((c) => c.titular).filter((t): t is string => Boolean(t)))].sort();
 
@@ -69,9 +97,7 @@ export default async function Cuentas() {
                     </div>
                   </div>
                   <div className="flex items-center gap-4">
-                    <span className="tabular-nums" title={c.tarjeta ? "Resumen a pagar al inicio" : "Saldo al inicio"}>
-                      $ {pesosExactos(c.saldoInicial)}
-                    </span>
+                    <Saldo cuenta={c} />
                     <BotonArchivar id={c.id} />
                   </div>
                 </div>
@@ -109,6 +135,37 @@ export default async function Cuentas() {
           </section>
         );
       })}
+
+      {monedas.length > 0 && (
+        <section className={`${caja} flex flex-col gap-5 p-5`}>
+          <div>
+            <h2 className="text-lg font-semibold">Tipos de cambio</h2>
+            <p className={`text-sm ${textoSuave}`}>
+              Las cuentas en otras monedas se suman en pesos con este valor. Podés cargarlo a mano o traer la
+              cotización de compra del día.
+            </p>
+          </div>
+          {monedas.map((m) => {
+            const cotizacion = cotizaciones[m];
+            return (
+              <div key={m} className="flex flex-col gap-2">
+                <h3 className="font-medium">
+                  {m}
+                  {cotizacion ? (
+                    <span className={`ml-2 text-sm font-normal ${textoSuave}`}>
+                      $ {cotizacion.valor.toLocaleString("es-AR")} · {cotizacion.fuente} ·{" "}
+                      {new Date(cotizacion.actualizada).toLocaleDateString("es-AR")}
+                    </span>
+                  ) : (
+                    <span className="ml-2 text-sm font-normal text-red-600">sin cargar: se cuenta 1 a 1</span>
+                  )}
+                </h3>
+                <FormularioCotizacion moneda={m} valor={cotizacion?.valor} />
+              </div>
+            );
+          })}
+        </section>
+      )}
 
       <section className={`${caja} p-5`}>
         <h2 className="mb-4 text-lg font-semibold">Agregar cuenta</h2>

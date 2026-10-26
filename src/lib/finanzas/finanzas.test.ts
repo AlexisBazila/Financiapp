@@ -242,6 +242,66 @@ describe("previsión", () => {
     expect(nov.deudaTarjetas).toBe(0);
   });
 
+  it("una cuenta en dólares suma en pesos con su tipo de cambio", () => {
+    const dolares: Cuenta = {
+      id: "usd",
+      nombre: "Caja USD",
+      tipo: "banco",
+      disponibilidad: "48h",
+      saldoInicial: 100_00,
+      moneda: "USD",
+      cambio: 1_400,
+    };
+    const datos = vacio();
+    datos.cuentas = [{ ...banco, saldoInicial: 500_000_00 }, ahorro, visa, dolares];
+    datos.movimientos.push({
+      id: "compra-usd",
+      fecha: "2026-11-03",
+      descripcion: "Compra de dólares",
+      tipo: "transferencia",
+      monto: 280_000_00,
+      cuentaId: "banco",
+      cuentaDestinoId: "usd",
+      estado: "real",
+      origen: { tipo: "manual" },
+    });
+    const [nov] = calcularPrevision(datos, { desde: "2026-11", meses: 1 });
+    expect(nov.saldos.usd).toBe(300_00);
+    expect(nov.disponible48h).toBe(420_000_00);
+    expect(nov.disponible).toBe(220_000_00);
+  });
+
+  it("el detalle de cada categoría agrupa las cuotas de una misma compra en todos los meses", () => {
+    const datos = vacio();
+    datos.cuentas = [{ ...banco, saldoInicial: 1_000_000_00 }, ahorro, visa];
+    datos.planesCuotas.push({
+      id: "tele",
+      descripcion: "Tele",
+      categoria: "Hogar",
+      cuentaId: "banco",
+      fechaCompra: "2026-11-10",
+      montoTotal: 300_000_00,
+      cantidad: 3,
+    });
+    datos.movimientos.push({
+      id: "lampara",
+      fecha: "2026-11-12",
+      descripcion: "Lámpara",
+      tipo: "egreso",
+      monto: 20_000_00,
+      cuentaId: "banco",
+      categoria: "Hogar",
+      estado: "real",
+      origen: { tipo: "manual" },
+    });
+    const [nov, dic] = calcularPrevision(datos, { desde: "2026-11", meses: 2 });
+    expect(nov.detalle["egreso:Hogar"].map((i) => [i.clave, i.nombre, i.monto, i.cuota])).toEqual([
+      ["cuotas:tele", "Tele", 100_000_00, "1/3"],
+      ["lampara", "Lámpara", 20_000_00, undefined],
+    ]);
+    expect(dic.detalle["egreso:Hogar"][0]).toMatchObject({ clave: "cuotas:tele", cuota: "2/3" });
+  });
+
   it("separa el ahorro reservado de lo disponible", () => {
     const datos = vacio();
     datos.cuentas = [{ ...banco, saldoInicial: 1_000_000_00 }, ahorro, visa];

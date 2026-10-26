@@ -10,6 +10,7 @@ import {
   aPresupuesto,
   aRecurrente,
   type FilaCiclo,
+  type FilaCotizacion,
   type FilaCuenta,
   type FilaEscenario,
   type FilaMovimiento,
@@ -37,6 +38,8 @@ export interface DatosHogar {
   cuentasActivas: string[];
   /** Comercios y personas ya usados, los más frecuentes primero, para sugerir al cargar. */
   contrapartes: string[];
+  /** Tipos de cambio cargados, por moneda. */
+  cotizaciones: Record<string, { valor: number; fuente: string; actualizada: string }>;
 }
 
 function masUsadas(nombres: (string | undefined)[]): string[] {
@@ -52,8 +55,19 @@ function sinError<T>(resultado: { data: T | null; error: { message: string } | n
 
 /** Todo lo que necesita la previsión, del hogar del usuario de la sesión. */
 export async function cargarHogar(supabase: SupabaseClient): Promise<DatosHogar> {
-  const [hogares, cuentas, ciclos, movimientos, planes, prestamos, recurrentes, escenarios, categorias, presupuestos] =
-    await Promise.all([
+  const [
+    hogares,
+    cuentas,
+    ciclos,
+    movimientos,
+    planes,
+    prestamos,
+    recurrentes,
+    escenarios,
+    categorias,
+    presupuestos,
+    cotizaciones,
+  ] = await Promise.all([
       supabase.from("hogares").select("id, nombre, mes_inicio").order("creado").limit(1),
       supabase.from("cuentas").select("*").order("creado"),
       supabase.from("ciclos_tarjeta").select("cuenta_id, mes, cierre, vencimiento"),
@@ -64,12 +78,20 @@ export async function cargarHogar(supabase: SupabaseClient): Promise<DatosHogar>
       supabase.from("escenarios").select("*").order("creado"),
       supabase.from("categorias").select("id, nombre, tipo, padre_id, icono, color, orden, archivada"),
       supabase.from("presupuestos").select("*").order("creado"),
+      supabase.from("cotizaciones").select("moneda, valor, fuente, actualizada"),
     ]);
 
   const [filaHogar] = sinError<{ id: string; nombre: string; mes_inicio: string }[]>(hogares);
   if (!filaHogar) throw new Error("El usuario no tiene un hogar");
   const filasCuentas = sinError<FilaCuenta[]>(cuentas);
   const filasCiclos = sinError<FilaCiclo[]>(ciclos);
+  const listaCotizaciones = Object.fromEntries(
+    sinError<FilaCotizacion[]>(cotizaciones).map((c) => [
+      c.moneda,
+      { valor: Number(c.valor), fuente: c.fuente, actualizada: c.actualizada },
+    ]),
+  );
+  const cambios = Object.fromEntries(Object.entries(listaCotizaciones).map(([m, c]) => [m, c.valor]));
   const listaCategorias = sinError<FilaCategoria[]>(categorias).map(aCategoria);
   const porId = new Map(listaCategorias.map((c) => [c.id, c]));
   const listaPresupuestos = sinError<FilaPresupuesto[]>(presupuestos).map(aPresupuesto);
@@ -79,7 +101,7 @@ export async function cargarHogar(supabase: SupabaseClient): Promise<DatosHogar>
   ];
 
   const datos: Datos = {
-    cuentas: filasCuentas.map((c) => aCuenta(c, filasCiclos)),
+    cuentas: filasCuentas.map((c) => aCuenta(c, filasCiclos, cambios)),
     movimientos: sinError<FilaMovimiento[]>(movimientos).map((f) => conCategoria(aMovimiento(f), porId)),
     planesCuotas: sinError<FilaPlanCuotas[]>(planes).map((f) => conCategoria(aPlanCuotas(f), porId)),
     prestamos: sinError<FilaPrestamo[]>(prestamos).map((f) => conCategoria(aPrestamo(f), porId)),
@@ -94,6 +116,7 @@ export async function cargarHogar(supabase: SupabaseClient): Promise<DatosHogar>
     categorias: listaCategorias,
     presupuestos: listaPresupuestos,
     cuentasActivas: filasCuentas.filter((c) => !c.archivada).map((c) => c.id),
+    cotizaciones: listaCotizaciones,
     contrapartes: masUsadas(
       [...datos.movimientos, ...datos.planesCuotas, ...datos.prestamos, ...datos.recurrentes].map((x) => x.contraparte),
     ),
