@@ -243,6 +243,11 @@ function juntarCuotas(a: string, b: string): string {
   return `${numeros.join(", ")}/${total}`;
 }
 
+/** Si el movimiento es de antes del día del saldo inicial de la cuenta, y entonces ya está incluido en él. */
+function yaEnElSaldo(mov: Movimiento, cuenta: Cuenta): boolean {
+  return !cuenta.tarjeta && cuenta.saldoFecha !== undefined && mov.fecha <= cuenta.saldoFecha;
+}
+
 function efectosDe(mov: Movimiento, cuentas: Map<string, Cuenta>, desde: Mes): Efecto[] {
   const cuenta = cuentas.get(mov.cuentaId);
   if (!cuenta) throw new Error(`No existe la cuenta ${mov.cuentaId}`);
@@ -260,12 +265,14 @@ function efectosDe(mov: Movimiento, cuentas: Map<string, Cuenta>, desde: Mes): E
     const signoOrigen = cuenta.tarjeta ? 1 : -1;
     const signoDestino = destino.tarjeta ? -1 : 1;
     return [
-      { mes, cuentaId: cuenta.id, delta: signoOrigen * mov.monto },
+      { mes, cuentaId: cuenta.id, delta: yaEnElSaldo(mov, cuenta) ? 0 : signoOrigen * mov.monto },
       {
         mes,
         cuentaId: destino.id,
         // Entre monedas distintas, lo que llega se convierte con los tipos de cambio cargados.
-        delta: signoDestino * Math.round((mov.monto * cambioDe(cuenta)) / cambioDe(destino)),
+        delta: yaEnElSaldo(mov, destino)
+          ? 0
+          : signoDestino * Math.round((mov.monto * cambioDe(cuenta)) / cambioDe(destino)),
         ...(destino.tarjeta && !cuenta.tarjeta ? { pago: mov.monto } : {}),
       },
     ];
@@ -277,7 +284,7 @@ function efectosDe(mov: Movimiento, cuentas: Map<string, Cuenta>, desde: Mes): E
       {
         mes: mesDe(mov.fecha),
         cuentaId: cuenta.id,
-        delta: signo * mov.monto,
+        delta: yaEnElSaldo(mov, cuenta) ? 0 : signo * mov.monto,
         flujo: { tipo: mov.tipo, categoria, monto: enPesos, certeza, cuota, item },
       },
     ];

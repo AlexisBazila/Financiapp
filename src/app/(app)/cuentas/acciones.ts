@@ -22,6 +22,8 @@ export async function guardarCuenta(id: string | null, _: Resultado, form: FormD
   if (!nombre) return { error: "Poné un nombre." };
   if (!TIPOS.includes(tipo)) return { error: "Elegí el tipo de cuenta." };
   if (saldo === null) return { error: "El saldo no es un número válido." };
+  const saldoFecha = texto(form, "saldo_fecha");
+  if (saldoFecha && !/^\d{4}-\d{2}-\d{2}$/.test(saldoFecha)) return { error: "La fecha del saldo no es válida." };
 
   const esTarjeta = tipo === "tarjeta";
   // Las tarjetas van en pesos: las compras en dólares se ven en pesos en el resumen.
@@ -37,6 +39,7 @@ export async function guardarCuenta(id: string | null, _: Resultado, form: FormD
     tipo,
     disponibilidad,
     saldo_inicial: saldo,
+    saldo_fecha: tipo === "tarjeta" ? null : saldoFecha || null,
     titular,
     moneda,
     dia_cierre: null,

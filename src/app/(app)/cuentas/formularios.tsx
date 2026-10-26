@@ -62,7 +62,7 @@ export function FormularioCuenta({
         </select>
       </label>
       <label className={etiqueta}>
-        {esTarjeta ? "Resumen ya cerrado a pagar ese mes ($)" : `Saldo al inicio del mes (${simbolo(moneda)})`}
+        {esTarjeta ? "Resumen ya cerrado a pagar ese mes ($)" : `Saldo (${simbolo(moneda)}), al inicio del mes o a la fecha de abajo`}
         <input
           name="saldo"
           inputMode="decimal"
@@ -71,6 +71,16 @@ export function FormularioCuenta({
           className={campo}
         />
       </label>
+      {!esTarjeta && (
+        <label className={etiqueta}>
+          Fecha del saldo (opcional)
+          <input name="saldo_fecha" type="date" defaultValue={inicial?.saldoFecha} className={campo} />
+          <span className="text-xs font-normal opacity-70">
+            Si cargaste el saldo que ves hoy en el banco, poné la fecha de hoy: lo de esta cuenta hasta ese día ya
+            está en el saldo y no se vuelve a descontar.
+          </span>
+        </label>
+      )}
       {!esTarjeta && (
         <label className={etiqueta}>
           Moneda

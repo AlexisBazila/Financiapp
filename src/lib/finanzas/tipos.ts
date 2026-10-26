@@ -49,6 +49,12 @@ export interface Cuenta {
   disponibilidad: Disponibilidad;
   /** Saldo al inicio de la previsión. En una tarjeta es la deuda (positiva). */
   saldoInicial: Centavos;
+  /**
+   * Día del saldo inicial, si no es el del comienzo de la previsión (por ejemplo, el saldo de hoy). Los
+   * movimientos de la cuenta hasta ese día ya están en el saldo: cuentan como ingresos o gastos, pero no lo
+   * cambian. No se usa en tarjetas.
+   */
+  saldoFecha?: Fecha;
   /** Persona de la casa a la que pertenece. */
   titular?: string;
   /** Código de la moneda (ARS si falta). Saldos y movimientos de la cuenta están en esa moneda. */
