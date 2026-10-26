@@ -1,6 +1,6 @@
 import { diaDe, fechaEnMes, mesDe, sumarMeses } from "./fechas";
 import { cicloDe, resumenDeFecha } from "./tarjeta";
-import type { Centavos, Cuenta, Movimiento, PlanCuotas, Prestamo } from "./tipos";
+import type { Centavos, Cuenta, Deuda, Movimiento, PlanCuotas, Prestamo } from "./tipos";
 
 /** Reparte `total` en `n` partes enteras; la diferencia de redondeo va a la última. */
 export function repartir(total: Centavos, n: number): Centavos[] {
@@ -117,4 +117,28 @@ export function generarCuotasPrestamo(prestamo: Prestamo): Movimiento[] {
     },
     ...cuotas,
   ];
+}
+
+/**
+ * Las cuotas de una deuda, cada una en el mes que se eligió. En una tarjeta entra en el resumen que cierra
+ * ese mes, así que cuenta como gasto de ese mes.
+ */
+export function generarCuotasDeuda(deuda: Deuda, cuenta: Cuenta): Movimiento[] {
+  const total = deuda.cuotas.length;
+  return deuda.cuotas.map((c) => {
+    const base = {
+      id: `${deuda.id}#${c.numero}`,
+      descripcion: `${deuda.descripcion} (${c.numero}/${total})`,
+      tipo: "egreso" as const,
+      monto: c.monto,
+      cuentaId: deuda.cuentaId,
+      categoria: deuda.categoria,
+      categoriaId: deuda.categoriaId,
+      contraparte: deuda.contraparte,
+      estado: "planificado" as const,
+      origen: { tipo: "deuda" as const, deudaId: deuda.id, numero: c.numero, total },
+    };
+    if (cuenta.tarjeta) return { ...base, fecha: cicloDe(cuenta, c.mes).cierre, mesResumen: c.mes };
+    return { ...base, fecha: fechaEnMes(c.mes, deuda.diaDelMes) };
+  });
 }

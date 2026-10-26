@@ -3,6 +3,7 @@ import type { Datos, Escenario, Mes, Presupuesto } from "@/lib/finanzas/tipos";
 import { aCategoria, conCategoria, type Categoria, type FilaCategoria } from "./categorias";
 import {
   aCuenta,
+  aDeuda,
   aEscenario,
   aMovimiento,
   aObjetivo,
@@ -13,6 +14,7 @@ import {
   type FilaCiclo,
   type FilaCotizacion,
   type FilaCuenta,
+  type FilaDeuda,
   type FilaEscenario,
   type FilaMovimiento,
   type FilaObjetivo,
@@ -70,6 +72,7 @@ export async function cargarHogar(supabase: SupabaseClient): Promise<DatosHogar>
     presupuestos,
     cotizaciones,
     objetivos,
+    deudas,
   ] = await Promise.all([
       supabase.from("hogares").select("id, nombre, mes_inicio").order("creado").limit(1),
       supabase.from("cuentas").select("*").order("creado"),
@@ -83,6 +86,7 @@ export async function cargarHogar(supabase: SupabaseClient): Promise<DatosHogar>
       supabase.from("presupuestos").select("*").order("creado"),
       supabase.from("cotizaciones").select("moneda, valor, fuente, actualizada"),
       supabase.from("objetivos_ahorro").select("*").order("creado"),
+      supabase.from("deudas").select("*").order("creado"),
     ]);
 
   const [filaHogar] = sinError<{ id: string; nombre: string; mes_inicio: string }[]>(hogares);
@@ -112,6 +116,7 @@ export async function cargarHogar(supabase: SupabaseClient): Promise<DatosHogar>
     recurrentes: sinError<FilaRecurrente[]>(recurrentes).map((f) => conCategoria(aRecurrente(f), porId)),
     presupuestos: listaPresupuestos.map((p) => ({ ...p, categoriaIds: conSubcategorias(p.categoriaIds) })),
     objetivos: sinError<FilaObjetivo[]>(objetivos).map(aObjetivo),
+    deudas: sinError<FilaDeuda[]>(deudas).map((f) => conCategoria(aDeuda(f), porId)),
   };
 
   return {
@@ -123,7 +128,7 @@ export async function cargarHogar(supabase: SupabaseClient): Promise<DatosHogar>
     cuentasActivas: filasCuentas.filter((c) => !c.archivada).map((c) => c.id),
     cotizaciones: listaCotizaciones,
     contrapartes: masUsadas(
-      [...datos.movimientos, ...datos.planesCuotas, ...datos.prestamos, ...datos.recurrentes].map((x) => x.contraparte),
+      [...datos.movimientos, ...datos.planesCuotas, ...datos.prestamos, ...datos.recurrentes, ...(datos.deudas ?? [])].map((x) => x.contraparte),
     ),
   };
 }

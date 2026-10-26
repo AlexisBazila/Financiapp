@@ -217,7 +217,8 @@ function Fila({
   const color = colores(s, m.estado === "real");
   const ruta = m.categoriaId ? rutaCategoria(categorias, m.categoriaId) : m.categoria;
   const puntoColor = m.categoriaId ? categorias.get(m.categoriaId)?.color : undefined;
-  const cuota = m.origen.tipo === "cuotas" || m.origen.tipo === "prestamo" ? m.origen : undefined;
+  const cuota =
+    m.origen.tipo === "cuotas" || m.origen.tipo === "prestamo" || m.origen.tipo === "deuda" ? m.origen : undefined;
   const pagoDeTarjeta =
     m.tipo === "transferencia" && opciones.cuentas.some((c) => c.tarjeta && c.id === m.cuentaDestinoId);
 
@@ -242,7 +243,8 @@ function Fila({
         </span>
         {cuota && (
           <Chip clase={CHIP_CUOTA}>
-            {cuota.tipo === "prestamo" ? "Préstamo" : "Cuota"} {cuota.numero}/{cuota.total}
+            {cuota.tipo === "prestamo" ? "Préstamo" : cuota.tipo === "deuda" ? "Deuda · cuota" : "Cuota"} {cuota.numero}/
+            {cuota.total}
           </Chip>
         )}
         {pagoDeTarjeta && (

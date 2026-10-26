@@ -52,6 +52,16 @@ const SECCIONES = [
     ),
   },
   {
+    href: "/deudas",
+    nombre: "Deudas",
+    icono: trazo(
+      <>
+        <path d="M4 4h12l4 4v12H4z" />
+        <path d="M8 10h8M8 14h8M8 18h4" />
+      </>,
+    ),
+  },
+  {
     href: "/presupuestos",
     nombre: "Presupuestos",
     icono: trazo(

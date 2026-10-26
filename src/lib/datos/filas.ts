@@ -3,6 +3,8 @@
 import type {
   CicloTarjeta,
   Cuenta,
+  CuotaDeuda,
+  Deuda,
   Escenario,
   Movimiento,
   Origen,
@@ -275,5 +277,31 @@ export function aObjetivo(fila: FilaObjetivo): ObjetivoAhorro {
     montosPorMes: Object.fromEntries(Object.entries(fila.montos_por_mes ?? {}).map(([m, v]) => [m, Number(v)])),
     desde: fila.desde,
     hasta: fila.hasta ?? undefined,
+  };
+}
+
+export interface FilaDeuda {
+  id: string;
+  descripcion: string;
+  categoria: string;
+  categoria_id: string | null;
+  contraparte: string | null;
+  cuenta_id: string;
+  dia_del_mes: number;
+  cuotas: CuotaDeuda[] | null;
+}
+
+export function aDeuda(fila: FilaDeuda): Deuda {
+  return {
+    id: fila.id,
+    descripcion: fila.descripcion,
+    categoria: fila.categoria,
+    categoriaId: fila.categoria_id ?? undefined,
+    contraparte: fila.contraparte ?? undefined,
+    cuentaId: fila.cuenta_id,
+    diaDelMes: fila.dia_del_mes,
+    cuotas: (fila.cuotas ?? [])
+      .map((c) => ({ numero: Number(c.numero), monto: Number(c.monto), mes: c.mes }))
+      .sort((a, b) => a.numero - b.numero),
   };
 }
