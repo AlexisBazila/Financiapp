@@ -10,7 +10,8 @@ Etapa 1 en curso: login, cuentas editables agrupadas por tipo y con titular (con
 préstamos, ingresos y gastos recurrentes (con confirmación mensual), categorías con subcategorías, emoji
 y color, movimientos por mes que se confirman y concilian con el banco (con el comercio o la persona
 de cada pago, como figura en el resumen), presupuestos
-mensuales por categorías (de todas las cuentas o de algunas), la vista de cada cuenta y la previsión
+mensuales por categorías (de todas las cuentas o de algunas), objetivos de ahorro e inversión (monto fijo
+o porcentaje de los ingresos), la vista de cada cuenta y la previsión (planificada, real o comparadas)
 con los datos guardados en Supabase. `/ejemplo` muestra la previsión con datos de muestra.
 
 ## Configurar Supabase y Vercel

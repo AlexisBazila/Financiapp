@@ -6,7 +6,7 @@ import { calcularPrevision, categoriaResto } from "./prevision";
 import { confirmar, instanciarRecurrente } from "./recurrentes";
 import { estadoTarjeta, periodoDe } from "./estado-tarjeta";
 import { resumenDeFecha } from "./tarjeta";
-import type { Cuenta, Datos, Escenario, Movimiento, PlanCuotas, Presupuesto, Recurrente } from "./tipos";
+import type { Cuenta, Datos, Escenario, Movimiento, ObjetivoAhorro, PlanCuotas, Presupuesto, Recurrente } from "./tipos";
 
 const banco: Cuenta = { id: "banco", nombre: "Banco", tipo: "banco", disponibilidad: "inmediata", saldoInicial: 0 };
 const ahorro: Cuenta = { id: "ahorro", nombre: "Ahorro", tipo: "banco", disponibilidad: "reserva", saldoInicial: 0 };
@@ -603,5 +603,82 @@ describe("estado de la tarjeta", () => {
   it("después del vencimiento descuenta el pago automático", () => {
     const estado = estadoTarjeta(datos(), "visa", "2026-11-05", "2026-10");
     expect(estado.deudaTotal).toBe(250_000_00);
+  });
+});
+
+describe("objetivos de ahorro", () => {
+  const sueldo = (mes: string, monto: number): Movimiento => ({
+    id: `sueldo-${mes}`,
+    fecha: `${mes}-01`,
+    descripcion: "Sueldo",
+    tipo: "ingreso",
+    monto,
+    cuentaId: "banco",
+    categoria: "Sueldo",
+    estado: "real",
+    origen: { tipo: "manual" },
+  });
+  const ahorroMensual: ObjetivoAhorro = {
+    id: "ahorro",
+    nombre: "Ahorro",
+    icono: "🐷",
+    cuentaOrigenId: "banco",
+    cuentaDestinoId: "ahorro",
+    monto: 100_000_00,
+    desde: "2026-11",
+  };
+  const conAhorro = (objetivo: ObjetivoAhorro, movimientos: Movimiento[] = []): Datos => ({
+    ...vacio(),
+    cuentas: [{ ...banco, saldoInicial: 500_000_00 }, { ...ahorro, saldoInicial: 751_687_00 }, visa],
+    movimientos,
+    objetivos: [objetivo],
+  });
+
+  it("lo planificado pasa de la cuenta de origen a la reserva a fin de mes", () => {
+    const [nov, dic] = calcularPrevision(conAhorro(ahorroMensual), { desde: "2026-11", meses: 2 });
+    expect(nov.reserva).toBe(851_687_00);
+    expect(nov.disponible).toBe(400_000_00);
+    expect(nov.objetivos[0]).toMatchObject({ objetivo: 100_000_00, hecho: 0, previsto: 100_000_00, fecha: "2026-11-30" });
+    expect(dic.reserva).toBe(951_687_00);
+    // No es un gasto: es plata que se mueve entre cuentas.
+    expect(nov.egresos).toBe(0);
+    expect(nov.ahorroDelMes).toBe(100_000_00);
+  });
+
+  it("lo transferido cuenta como hecho y solo se prevé lo que falta; lo real no incluye lo planificado", () => {
+    const transferencia: Movimiento = {
+      id: "t",
+      fecha: "2026-11-10",
+      descripcion: "Ahorro",
+      tipo: "transferencia",
+      monto: 50_000_00,
+      cuentaId: "banco",
+      cuentaDestinoId: "ahorro",
+      estado: "real",
+      origen: { tipo: "manual" },
+    };
+    const datos = conAhorro(ahorroMensual, [transferencia]);
+    const [plan] = calcularPrevision(datos, { desde: "2026-11", meses: 1 });
+    expect(plan.objetivos[0]).toMatchObject({ hecho: 50_000_00, previsto: 50_000_00 });
+    expect(plan.reserva).toBe(851_687_00);
+    const [real] = calcularPrevision(datos, { desde: "2026-11", meses: 1, estados: ["real"] });
+    expect(real.reserva).toBe(801_687_00);
+    expect(real.objetivos[0]).toMatchObject({ objetivo: 100_000_00, hecho: 50_000_00, previsto: 0 });
+    expect(plan.ahorroDelMes).toBe(100_000_00);
+    expect(real.ahorroDelMes).toBe(50_000_00);
+  });
+
+  it("como porcentaje de los ingresos del mes, con montos a mano en meses puntuales", () => {
+    const porcentaje = { ...ahorroMensual, monto: undefined, porcentaje: 10, montosPorMes: { "2026-12": 478_956_68 } };
+    const datos = conAhorro(porcentaje, [sueldo("2026-11", 2_000_000_00), sueldo("2026-12", 2_000_000_00)]);
+    const [nov, dic] = calcularPrevision(datos, { desde: "2026-11", meses: 2 });
+    expect(nov.objetivos[0].objetivo).toBe(200_000_00);
+    expect(dic.objetivos[0].objetivo).toBe(478_956_68);
+  });
+
+  it("en los meses pasados no prevé lo que no se transfirió", () => {
+    const [nov, dic] = calcularPrevision(conAhorro(ahorroMensual), { desde: "2026-11", meses: 2, mesActual: "2026-12" });
+    expect(nov.objetivos[0].previsto).toBe(0);
+    expect(dic.objetivos[0].previsto).toBe(100_000_00);
   });
 });

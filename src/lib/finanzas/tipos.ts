@@ -163,6 +163,26 @@ export interface Presupuesto {
   cuentaIds?: string[];
 }
 
+/**
+ * Lo que se planea pasar cada mes de una cuenta a otra para ahorrar o invertir, de `desde` a `hasta`.
+ * Las transferencias cargadas a la cuenta de destino en el mes cuentan como hechas; lo que falta se prevé.
+ */
+export interface ObjetivoAhorro {
+  id: string;
+  nombre: string;
+  icono: string;
+  cuentaOrigenId: string;
+  cuentaDestinoId: string;
+  /** Monto fijo por mes, en la moneda de la cuenta de origen. */
+  monto?: Centavos;
+  /** O un porcentaje de los ingresos del mes (sin lo que sobró del mes anterior). */
+  porcentaje?: number;
+  /** Montos puestos a mano para meses puntuales; reemplazan al fijo o al porcentaje. */
+  montosPorMes?: Record<Mes, Centavos>;
+  desde: Mes;
+  hasta?: Mes;
+}
+
 /** Todo lo que el usuario carga. Los escenarios modifican una copia de esto. */
 export interface Datos {
   cuentas: Cuenta[];
@@ -171,6 +191,7 @@ export interface Datos {
   prestamos: Prestamo[];
   recurrentes: Recurrente[];
   presupuestos?: Presupuesto[];
+  objetivos?: ObjetivoAhorro[];
 }
 
 type Coleccion = "movimientos" | "planesCuotas" | "prestamos" | "recurrentes";

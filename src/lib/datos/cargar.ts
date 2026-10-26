@@ -5,6 +5,7 @@ import {
   aCuenta,
   aEscenario,
   aMovimiento,
+  aObjetivo,
   aPlanCuotas,
   aPrestamo,
   aPresupuesto,
@@ -14,6 +15,7 @@ import {
   type FilaCuenta,
   type FilaEscenario,
   type FilaMovimiento,
+  type FilaObjetivo,
   type FilaPlanCuotas,
   type FilaPresupuesto,
   type FilaPrestamo,
@@ -67,6 +69,7 @@ export async function cargarHogar(supabase: SupabaseClient): Promise<DatosHogar>
     categorias,
     presupuestos,
     cotizaciones,
+    objetivos,
   ] = await Promise.all([
       supabase.from("hogares").select("id, nombre, mes_inicio").order("creado").limit(1),
       supabase.from("cuentas").select("*").order("creado"),
@@ -79,6 +82,7 @@ export async function cargarHogar(supabase: SupabaseClient): Promise<DatosHogar>
       supabase.from("categorias").select("id, nombre, tipo, padre_id, icono, color, orden, archivada"),
       supabase.from("presupuestos").select("*").order("creado"),
       supabase.from("cotizaciones").select("moneda, valor, fuente, actualizada"),
+      supabase.from("objetivos_ahorro").select("*").order("creado"),
     ]);
 
   const [filaHogar] = sinError<{ id: string; nombre: string; mes_inicio: string }[]>(hogares);
@@ -107,6 +111,7 @@ export async function cargarHogar(supabase: SupabaseClient): Promise<DatosHogar>
     prestamos: sinError<FilaPrestamo[]>(prestamos).map((f) => conCategoria(aPrestamo(f), porId)),
     recurrentes: sinError<FilaRecurrente[]>(recurrentes).map((f) => conCategoria(aRecurrente(f), porId)),
     presupuestos: listaPresupuestos.map((p) => ({ ...p, categoriaIds: conSubcategorias(p.categoriaIds) })),
+    objetivos: sinError<FilaObjetivo[]>(objetivos).map(aObjetivo),
   };
 
   return {

@@ -29,8 +29,8 @@ export default async function Cuenta({ params, searchParams }: PageProps<"/cuent
 
   if (cuenta.tarjeta) return <Tarjeta datosHogar={datosHogar} cuenta={cuenta} pedido={pedido} />;
 
-  const { opciones, pagosAutomaticos } = movimientosDelMes(datosHogar, mes, actual);
-  const lista = [...expandir(datos, mes, mes), ...pagosAutomaticos]
+  const { opciones, pagosAutomaticos, ahorrosPrevistos } = movimientosDelMes(datosHogar, mes, actual);
+  const lista = [...expandir(datos, mes, mes), ...pagosAutomaticos, ...ahorrosPrevistos]
     .filter((m) => (m.cuentaId === id || m.cuentaDestinoId === id) && mesDe(m.fecha) === mes)
     .sort((a, b) => b.fecha.localeCompare(a.fecha) || a.descripcion.localeCompare(b.descripcion));
 
