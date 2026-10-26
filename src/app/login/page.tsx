@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { Suspense } from "react";
 import { configSupabase } from "@/lib/supabase/config";
@@ -13,8 +14,10 @@ async function AvisoConfirmacion({ searchParams }: { searchParams: PageProps<"/l
 export default function Login({ searchParams }: PageProps<"/login">) {
   return (
     <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center px-4 py-12">
-      <h1 className="text-2xl font-semibold">Financiapp</h1>
-      <p className={`mb-6 text-sm ${textoSuave}`}>Las finanzas del hogar, mes a mes.</p>
+      <h1 className="mb-2 flex justify-center rounded-xl bg-black px-6 py-5">
+        <Image src="/logo-blanco.png" alt="Financiapp" width={640} height={123} priority className="h-10 w-auto" />
+      </h1>
+      <p className={`mb-6 text-center text-sm ${textoSuave}`}>Las finanzas del hogar, mes a mes.</p>
       <Suspense>
         <AvisoConfirmacion searchParams={searchParams} />
       </Suspense>

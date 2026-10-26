@@ -676,6 +676,13 @@ describe("objetivos de ahorro", () => {
     expect(dic.objetivos[0].objetivo).toBe(478_956_68);
   });
 
+  it("el resto de cada mes (lo que sobra o falta después de gastar y ahorrar) pasa al mes siguiente", () => {
+    const datos = conAhorro(ahorroMensual, [sueldo("2026-11", 150_000_00), sueldo("2026-12", 50_000_00)]);
+    const [nov, dic] = calcularPrevision(datos, { desde: "2026-11", meses: 2 });
+    expect(nov).toMatchObject({ sobranteAnterior: 0, resto: 50_000_00 });
+    expect(dic).toMatchObject({ sobranteAnterior: 50_000_00, resto: 0 });
+  });
+
   it("en los meses pasados no prevé lo que no se transfirió", () => {
     const [nov, dic] = calcularPrevision(conAhorro(ahorroMensual), { desde: "2026-11", meses: 2, mesActual: "2026-12" });
     expect(nov.objetivos[0].previsto).toBe(0);

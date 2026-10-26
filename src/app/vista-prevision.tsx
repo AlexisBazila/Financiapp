@@ -69,6 +69,13 @@ export function VistaPrevision({
     [datos, desde, meses, visibleDesde, mesActual, hoy],
   );
 
+  // Último mes con algo confirmado (por ejemplo, compras con tarjeta del período que cierra el mes que
+  // viene): hasta ahí hay datos reales para mostrar.
+  const hastaReal = real.reduce(
+    (ultimo, m) => (m.ingresos || m.egresos || m.consumoTarjetas ? (m.mes > ultimo ? m.mes : ultimo) : ultimo),
+    mesActual ?? visibleDesde,
+  );
+
   const prevision = previsiones[seleccionado];
   const opciones = [{ id: BASE, nombre: "Plan base" }, ...escenarios];
 
@@ -122,13 +129,14 @@ export function VistaPrevision({
         </div>
         <Grilla
           prevision={
-            vista === "plan" ? prevision : vista === "real" ? real.filter((m) => !mesActual || m.mes <= mesActual) : real
+            vista === "plan" ? prevision : vista === "real" ? real.filter((m) => m.mes <= hastaReal) : real
           }
           plan={vista === "comparar" ? prevision : undefined}
-          mesActual={mesActual}
+          hastaReal={hastaReal}
           subcategorias={subcategorias}
         />
       </div>
+      <Balance plan={prevision} real={real} hastaReal={hastaReal} />
       {escenarios.length > 0 && <Comparacion previsiones={previsiones} opciones={opciones} />}
     </div>
   );
@@ -224,17 +232,17 @@ const MARCA_CUOTA_DETALLE = "rounded ring-1 ring-inset ring-amber-400";
 function Grilla({
   prevision,
   plan,
-  mesActual,
+  hastaReal,
   subcategorias,
 }: {
   prevision: MesPrevision[];
   /** Para comparar: lo planificado de cada mes, que se muestra debajo de lo de `prevision`. */
   plan?: MesPrevision[];
   /** Al comparar, los meses posteriores no tienen nada real todavía: solo se muestra lo planificado. */
-  mesActual?: Mes;
+  hastaReal?: Mes;
   subcategorias: Record<string, string>;
 }) {
-  const sinReal = (m: MesPrevision) => Boolean(plan && mesActual && m.mes > mesActual);
+  const sinReal = (m: MesPrevision) => Boolean(plan && hastaReal && m.mes > hastaReal);
   const [abiertas, setAbiertas] = useState<Set<string>>(new Set());
   const alternar = (clave: string) =>
     setAbiertas((actual) => {
@@ -426,6 +434,12 @@ function Grilla({
           </thead>
           <tbody>
             {separador("Ingresos")}
+            {fila(
+              "↪ Sobrante del mes anterior",
+              (m: MesPrevision) => m.sobranteAnterior,
+              "italic",
+              signo,
+            )}
             {ingresos.map((c) => filaCategoria("ingreso", c))}
             {fila(
               "Total ingresos",
@@ -469,14 +483,30 @@ function Grilla({
                     </Fragment>
                   );
                 })}
-                {fila(
-                  "Queda libre",
-                  (m: MesPrevision) => m.neto - m.ahorroDelMes,
-                  total,
-                  signo,
-                )}
               </>
             )}
+            <tr className="border-t-2 border-black/20 dark:border-white/25">
+              <th scope="row" className={`${primera} py-2.5`}>
+                <div className="text-base font-bold">Resto</div>
+                <div className="text-xs font-normal text-black/50 dark:text-white/50">
+                  sobrante anterior + resultado − ahorro · pasa al mes siguiente
+                </div>
+              </th>
+              {prevision.map((m, i) => (
+                <td
+                  key={m.mes}
+                  className={`${celda} py-2.5 text-base font-bold ${
+                    m.resto < 0
+                      ? "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400"
+                      : "bg-green-50 text-green-700 dark:bg-green-500/10 dark:text-green-400"
+                  }`}
+                  title={m.resto < 0 ? "Faltó: queda como deuda para el mes siguiente" : "Sobró sin asignar"}
+                >
+                  {sinReal(m) ? "" : m.resto === 0 ? "–" : `${m.resto < 0 ? "−" : ""}${pesos(Math.abs(m.resto))}`}
+                  {debajo((x) => x.resto, i)}
+                </td>
+              ))}
+            </tr>
             {prevision.some((m) => m.consumoTarjetas || m.venceTarjetas || m.impagoTarjetas) && (
               <>
                 {separador("Tarjetas de crédito")}
@@ -651,4 +681,185 @@ function Comparacion({
       </div>
     </section>
   );
+}
+
+/** Lo que tenés menos lo que debés de tarjeta al cierre del mes. */
+const balanceDe = (m: MesPrevision) => m.disponible + m.disponible48h + m.reserva - m.deudaTarjetas;
+
+const SERIES = {
+  plan: { nombre: "Planificado", clase: "stroke-[#2a78d6] dark:stroke-[#3987e5]", relleno: "fill-[#2a78d6] dark:fill-[#3987e5]" },
+  real: { nombre: "Real", clase: "stroke-[#16a34a]", relleno: "fill-[#16a34a]" },
+};
+
+/** Balance al cierre de cada mes, planificado y real, con el detalle del mes al pasar el mouse. */
+function Balance({ plan, real, hastaReal }: { plan: MesPrevision[]; real: MesPrevision[]; hastaReal: Mes }) {
+  const [activo, setActivo] = useState<number | null>(null);
+  const meses = plan.map((m) => m.mes);
+  const valoresPlan = plan.map(balanceDe);
+  const valoresReal = real.filter((m) => m.mes <= hastaReal).map(balanceDe);
+  if (meses.length < 2) return null;
+
+  const ancho = 720;
+  const alto = 240;
+  const margen = { arriba: 16, derecha: 16, abajo: 28, izquierda: 64 };
+  const todos = [...valoresPlan, ...valoresReal, 0];
+  const minimo = Math.min(...todos);
+  const maximo = Math.max(...todos);
+  const paso = escalon((maximo - minimo) / 4 || 1);
+  const desdeY = Math.floor(minimo / paso) * paso;
+  const hastaY = Math.ceil(maximo / paso) * paso || paso;
+  const x = (i: number) => margen.izquierda + (i * (ancho - margen.izquierda - margen.derecha)) / (meses.length - 1);
+  const y = (v: number) => margen.arriba + ((hastaY - v) * (alto - margen.arriba - margen.abajo)) / (hastaY - desdeY);
+  const linea = (valores: number[]) => valores.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join("");
+  const marcas = Array.from({ length: Math.round((hastaY - desdeY) / paso) + 1 }, (_, i) => desdeY + i * paso);
+  const compacto = (v: number) => {
+    const p = Math.round(v / 100);
+    const abs = Math.abs(p);
+    const texto = abs >= 1_000_000 ? `${(abs / 1_000_000).toLocaleString("es-AR", { maximumFractionDigits: 1 })} M` : `${Math.round(abs / 1000)} mil`;
+    return `${p < 0 ? "−" : ""}$ ${abs === 0 ? "0" : texto}`;
+  };
+  const columna = (ancho - margen.izquierda - margen.derecha) / (meses.length - 1);
+
+  return (
+    <section>
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+        <div>
+          <h2 className="text-lg font-semibold">Balance al cierre de cada mes</h2>
+          <p className="text-sm text-black/60 dark:text-white/60">
+            Disponible + no inmediato + reserva, menos la deuda de tarjetas.
+          </p>
+        </div>
+        <div className="flex gap-4 text-sm" aria-label="Referencias">
+          <span className="flex items-center gap-1.5">
+            <svg width="22" height="8" aria-hidden>
+              <line x1="0" y1="4" x2="22" y2="4" strokeWidth="2" strokeDasharray="5 3" className={SERIES.plan.clase} />
+            </svg>
+            Planificado
+          </span>
+          <span className="flex items-center gap-1.5">
+            <svg width="22" height="8" aria-hidden>
+              <line x1="0" y1="4" x2="22" y2="4" strokeWidth="2" className={SERIES.real.clase} />
+            </svg>
+            Real
+          </span>
+        </div>
+      </div>
+      <div className="relative rounded-xl border border-black/10 p-3 dark:border-white/15">
+        <svg
+          viewBox={`0 0 ${ancho} ${alto}`}
+          className="h-auto w-full"
+          role="img"
+          aria-label="Balance planificado y real al cierre de cada mes"
+          onMouseLeave={() => setActivo(null)}
+        >
+          {marcas.map((v) => (
+            <g key={v}>
+              <line
+                x1={margen.izquierda}
+                x2={ancho - margen.derecha}
+                y1={y(v)}
+                y2={y(v)}
+                className={v === 0 ? "stroke-black/40 dark:stroke-white/40" : "stroke-black/10 dark:stroke-white/10"}
+                strokeDasharray={v === 0 ? undefined : "3 3"}
+              />
+              <text x={margen.izquierda - 8} y={y(v) + 4} textAnchor="end" className="fill-black/55 text-[11px] dark:fill-white/55">
+                {compacto(v)}
+              </text>
+            </g>
+          ))}
+          {meses.map((m, i) => (
+            <text key={m} x={x(i)} y={alto - 8} textAnchor="middle" className="fill-black/55 text-[11px] dark:fill-white/55">
+              {nombreMes(m)}
+            </text>
+          ))}
+          {activo !== null && (
+            <line
+              x1={x(activo)}
+              x2={x(activo)}
+              y1={margen.arriba}
+              y2={alto - margen.abajo}
+              className="stroke-black/30 dark:stroke-white/30"
+            />
+          )}
+          <path d={linea(valoresPlan)} fill="none" strokeWidth={2} strokeDasharray="6 4" className={SERIES.plan.clase} />
+          <path d={linea(valoresReal)} fill="none" strokeWidth={2} className={SERIES.real.clase} />
+          {valoresPlan.map((v, i) => (
+            <circle
+              key={`p${i}`}
+              cx={x(i)}
+              cy={y(v)}
+              r={activo === i ? 5 : 3.5}
+              className={`${SERIES.plan.relleno} stroke-background`}
+              strokeWidth={2}
+            />
+          ))}
+          {valoresReal.map((v, i) => (
+            <circle
+              key={`r${i}`}
+              cx={x(i)}
+              cy={y(v)}
+              r={activo === i ? 5 : 3.5}
+              className={`${SERIES.real.relleno} stroke-background`}
+              strokeWidth={2}
+            />
+          ))}
+          {meses.map((m, i) => (
+            <rect
+              key={`h${m}`}
+              x={x(i) - columna / 2}
+              y={0}
+              width={columna}
+              height={alto}
+              fill="transparent"
+              onMouseEnter={() => setActivo(i)}
+              onClick={() => setActivo(i)}
+            />
+          ))}
+        </svg>
+        {activo !== null && (
+          <div
+            className="pointer-events-none absolute top-3 rounded-lg border border-black/10 bg-background px-3 py-2 text-sm shadow-md dark:border-white/15"
+            style={{
+              left: `${(x(activo) / ancho) * 100}%`,
+              transform: activo > meses.length / 2 ? "translateX(calc(-100% - 12px))" : "translateX(12px)",
+            }}
+          >
+            <div className="font-medium">{nombreMes(meses[activo])}</div>
+            <div className="tabular-nums">Planificado: {conSigno(valoresPlan[activo])}</div>
+            <div className="tabular-nums">
+              Real: {activo < valoresReal.length ? conSigno(valoresReal[activo]) : "todavía no"}
+            </div>
+          </div>
+        )}
+      </div>
+      <details className="mt-2 text-sm text-black/60 dark:text-white/60">
+        <summary className="cursor-pointer">Ver como tabla</summary>
+        <table className="mt-2 text-sm tabular-nums">
+          <thead>
+            <tr>
+              <th className="pr-6 text-left font-medium">Mes</th>
+              <th className="pr-6 text-right font-medium">Planificado</th>
+              <th className="text-right font-medium">Real</th>
+            </tr>
+          </thead>
+          <tbody>
+            {meses.map((m, i) => (
+              <tr key={m}>
+                <td className="pr-6">{nombreMes(m)}</td>
+                <td className="pr-6 text-right">{conSigno(valoresPlan[i])}</td>
+                <td className="text-right">{i < valoresReal.length ? conSigno(valoresReal[i]) : "–"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </details>
+    </section>
+  );
+}
+
+/** Un paso redondo (1, 2 o 5 por una potencia de 10) cercano a `bruto`. */
+function escalon(bruto: number): number {
+  const potencia = 10 ** Math.floor(Math.log10(bruto));
+  const relativo = bruto / potencia;
+  return (relativo <= 1 ? 1 : relativo <= 2 ? 2 : relativo <= 5 ? 5 : 10) * potencia;
 }

@@ -29,16 +29,27 @@ function tituloDia(fecha: string): string {
 }
 
 /** ‹ Octubre 2026 › */
-export function SelectorMes({ mes, actual, ruta }: { mes: string; actual: string; ruta: string }) {
+export function SelectorMes({
+  mes,
+  actual,
+  ruta,
+  consulta = "",
+}: {
+  mes: string;
+  actual: string;
+  ruta: string;
+  /** Otros parámetros de la URL que se mantienen al cambiar de mes, como "&tipo=egreso". */
+  consulta?: string;
+}) {
   const flecha =
     "rounded-lg border border-black/15 px-3 py-1.5 text-lg leading-none hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10";
   return (
     <nav className="flex flex-wrap items-center gap-3" aria-label="Mes">
-      <Link href={`${ruta}?mes=${sumarMeses(mes, -1)}`} className={flecha} aria-label="Mes anterior">
+      <Link href={`${ruta}?mes=${sumarMeses(mes, -1)}${consulta}`} className={flecha} aria-label="Mes anterior">
         ‹
       </Link>
       <h2 className="min-w-40 text-center text-lg font-semibold">{tituloMes(mes)}</h2>
-      <Link href={`${ruta}?mes=${sumarMeses(mes, 1)}`} className={flecha} aria-label="Mes siguiente">
+      <Link href={`${ruta}?mes=${sumarMeses(mes, 1)}${consulta}`} className={flecha} aria-label="Mes siguiente">
         ›
       </Link>
       {mes !== actual && (

@@ -1,37 +1,44 @@
+import Image from "next/image";
 import Link from "next/link";
 import { Suspense } from "react";
 import { textoSuave } from "../estilos";
 import { salir } from "../login/acciones";
+import { MenuLateral, MenuSuperior } from "./navegacion";
 
-const SECCIONES = [
-  { href: "/", nombre: "Previsión" },
-  { href: "/movimientos", nombre: "Movimientos" },
-  { href: "/plan", nombre: "Plan" },
-  { href: "/presupuestos", nombre: "Presupuestos" },
-  { href: "/ahorro", nombre: "Ahorro" },
-  { href: "/cuentas", nombre: "Cuentas" },
-  { href: "/categorias", nombre: "Categorías" },
-];
+const logo = (
+  <Link href="/" aria-label="Financiapp, inicio">
+    <Image src="/logo-blanco.png" alt="Financiapp" width={640} height={123} priority className="h-8 w-auto" />
+  </Link>
+);
+
+const botonSalir = (
+  <form action={salir}>
+    <button type="submit" className="text-sm text-white/60 hover:text-white hover:underline">
+      Salir
+    </button>
+  </form>
+);
 
 export default function LayoutApp({ children }: LayoutProps<"/">) {
   return (
-    <div className="flex flex-1 flex-col">
-      <nav className="border-b border-black/10 dark:border-white/15">
-        <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 text-sm sm:px-8">
-          <span className="font-semibold">Financiapp</span>
-          {SECCIONES.map((s) => (
-            <Link key={s.href} href={s.href} className={`whitespace-nowrap hover:underline ${textoSuave}`}>
-              {s.nombre}
-            </Link>
-          ))}
-          <form action={salir} className="ml-auto">
-            <button type="submit" className={`whitespace-nowrap hover:underline ${textoSuave}`}>
-              Salir
-            </button>
-          </form>
+    <div className="flex flex-1 flex-col lg:flex-row">
+      <aside className="sticky top-0 z-10 hidden h-screen w-56 shrink-0 flex-col gap-8 bg-black px-4 py-6 lg:flex">
+        <div className="px-2">{logo}</div>
+        <nav aria-label="Secciones" className="flex-1">
+          <MenuLateral />
+        </nav>
+        <div className="px-3">{botonSalir}</div>
+      </aside>
+      <header className="sticky top-0 z-10 bg-black lg:hidden">
+        <div className="flex items-center justify-between px-4 py-3">
+          {logo}
+          {botonSalir}
         </div>
-      </nav>
-      <main className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-8">
+        <nav aria-label="Secciones">
+          <MenuSuperior />
+        </nav>
+      </header>
+      <main className="mx-auto w-full max-w-6xl min-w-0 px-4 py-8 sm:px-8">
         <Suspense fallback={<p className={textoSuave}>Cargando…</p>}>{children}</Suspense>
       </main>
     </div>
