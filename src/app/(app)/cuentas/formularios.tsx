@@ -132,6 +132,20 @@ export function FormularioCuenta({
           </label>
         </>
       )}
+      {esTarjeta && (
+        <label className="flex items-start gap-2 text-sm sm:col-span-2">
+          <input
+            name="pago_automatico"
+            type="checkbox"
+            defaultChecked={inicial?.tarjeta?.pagoAutomatico ?? true}
+            className="mt-0.5 size-4"
+          />
+          <span>
+            Pagar el resumen automáticamente al vencimiento, con lo que haya en la cuenta de pago. Si no alcanza, lo
+            que falta queda como deuda. Si en el mes cargás un pago de tarjeta, se usa ese.
+          </span>
+        </label>
+      )}
       {esTarjeta && pagos.length === 0 && (
         <p className="text-sm text-red-600 sm:col-span-2">Primero cargá la cuenta desde la que pagás la tarjeta.</p>
       )}

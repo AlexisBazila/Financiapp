@@ -12,10 +12,14 @@ import { borrarMovimiento, guardarMovimiento, marcar, type Base } from "./accion
 interface Opcion {
   id: string;
   nombre: string;
+  /** Si es una tarjeta de crédito. */
+  tarjeta?: boolean;
 }
 
 export interface Opciones {
   cuentas: Opcion[];
+  /** Lo que vence este mes en cada tarjeta, para sugerir el monto de un pago. */
+  aPagar?: Record<string, number>;
   categorias: Categoria[];
   /** Comercios y personas ya cargados, para sugerir. */
   contrapartes: string[];
@@ -25,6 +29,7 @@ function FormularioMovimiento({
   cuentas,
   categorias,
   contrapartes,
+  aPagar,
   fechaSugerida,
   base,
   inicial,
@@ -38,8 +43,14 @@ function FormularioMovimiento({
   alCancelar: () => void;
 }) {
   const [estado, accion, pendiente] = useActionState(guardarMovimiento.bind(null, base ?? null), {});
-  const [tipo, setTipo] = useState<string>(inicial?.tipo ?? "egreso");
-  const esTransferencia = tipo === "transferencia";
+  const tarjetas = cuentas.filter((c) => c.tarjeta);
+  const esPagoDeTarjeta = (m: Movimiento) =>
+    m.tipo === "transferencia" && tarjetas.some((t) => t.id === m.cuentaDestinoId);
+  const [tipo, setTipo] = useState<string>(inicial && esPagoDeTarjeta(inicial) ? "pago_tarjeta" : (inicial?.tipo ?? "egreso"));
+  const esPago = tipo === "pago_tarjeta";
+  const esTransferencia = tipo === "transferencia" || esPago;
+  const [tarjeta, setTarjeta] = useState(inicial?.cuentaDestinoId ?? tarjetas[0]?.id);
+  const vence = esPago && tarjeta ? aPagar?.[tarjeta] : undefined;
 
   const alGuardarActual = useRef(alGuardar);
   useEffect(() => {
@@ -56,6 +67,7 @@ function FormularioMovimiento({
           ["egreso", "Gasto"],
           ["ingreso", "Ingreso"],
           ["transferencia", "Entre cuentas"],
+          ...(tarjetas.length > 0 ? [["pago_tarjeta", "Pago de tarjeta"]] : []),
         ].map(([valor, nombre]) => (
           <label
             key={valor}
@@ -87,6 +99,9 @@ function FormularioMovimiento({
           defaultValue={inicial ? pesosExactos(inicial.monto) : undefined}
           className={campo}
         />
+        {vence !== undefined && vence > 0 && (
+          <span className="text-xs font-normal opacity-70">Vence este mes: $ {pesosExactos(vence)}</span>
+        )}
       </label>
       <label className={etiqueta}>
         Fecha
@@ -94,15 +109,32 @@ function FormularioMovimiento({
       </label>
       <label className={etiqueta}>
         {esTransferencia ? "Desde" : "Cuenta"}
-        <select name="cuenta_id" required defaultValue={inicial?.cuentaId} className={campo}>
-          {cuentas.map((c) => (
+        <select name="cuenta_id" required defaultValue={inicial?.cuentaId} key={tipo} className={campo}>
+          {(esPago ? cuentas.filter((c) => !c.tarjeta) : cuentas).map((c) => (
             <option key={c.id} value={c.id}>
               {c.nombre}
             </option>
           ))}
         </select>
       </label>
-      {esTransferencia ? (
+      {esPago ? (
+        <label className={etiqueta}>
+          Tarjeta
+          <select
+            name="cuenta_destino_id"
+            required
+            value={tarjeta}
+            onChange={(e) => setTarjeta(e.target.value)}
+            className={campo}
+          >
+            {tarjetas.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.nombre}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : esTransferencia ? (
         <label className={etiqueta}>
           Hacia
           <select name="cuenta_destino_id" required defaultValue={inicial?.cuentaDestinoId} className={campo}>
@@ -130,7 +162,12 @@ function FormularioMovimiento({
       )}
       <label className={etiqueta}>
         Descripción
-        <input name="descripcion" defaultValue={inicial?.descripcion} className={campo} />
+        <input
+          name="descripcion"
+          defaultValue={inicial?.descripcion}
+          placeholder={esPago ? "Pago de tarjeta" : undefined}
+          className={campo}
+        />
       </label>
       <label className={etiqueta}>
         Estado

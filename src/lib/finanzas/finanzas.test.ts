@@ -116,6 +116,7 @@ describe("recurrentes", () => {
 describe("previsión", () => {
   it("las compras con tarjeta se pagan el mes del vencimiento", () => {
     const datos = vacio();
+    datos.cuentas = [{ ...banco, saldoInicial: 150_000_00 }, ahorro, visa];
     datos.movimientos.push({
       id: "super",
       fecha: "2026-11-10",
@@ -132,7 +133,74 @@ describe("previsión", () => {
     expect(nov.deudaTarjetas).toBe(100_000_00);
     expect(dic.egresosPorCategoria["Víveres"]).toBe(100_000_00);
     expect(dic.deudaTarjetas).toBe(0);
-    expect(dic.disponible).toBe(-100_000_00);
+    expect(dic.disponible).toBe(50_000_00);
+    expect(dic.pagosTarjeta).toEqual([{ tarjetaId: "visa", cuentaId: "banco", monto: 100_000_00, fecha: "2026-12-02" }]);
+  });
+
+  const compraVisa = (monto: number): Movimiento => ({
+    id: "compra",
+    fecha: "2026-11-10",
+    descripcion: "Compra",
+    tipo: "egreso",
+    monto,
+    cuentaId: "visa",
+    categoria: "Varios",
+    estado: "real",
+    origen: { tipo: "manual" },
+  });
+
+  it("el pago automático no deja en negativo la cuenta: lo que falta queda como deuda y se paga después", () => {
+    const datos = vacio();
+    datos.cuentas = [{ ...banco, saldoInicial: 60_000_00 }, ahorro, visa];
+    datos.movimientos.push(compraVisa(100_000_00), {
+      id: "sueldo",
+      fecha: "2027-01-05",
+      descripcion: "Sueldo",
+      tipo: "ingreso",
+      monto: 200_000_00,
+      cuentaId: "banco",
+      categoria: "Sueldo",
+      estado: "planificado",
+      origen: { tipo: "manual" },
+    });
+    const [, dic, ene] = calcularPrevision(datos, { desde: "2026-11", meses: 3 });
+    expect(dic.pagosTarjeta[0].monto).toBe(60_000_00);
+    expect(dic.saldos.banco).toBe(0);
+    expect(dic.impagoTarjetas).toBe(40_000_00);
+    expect(dic.deudaTarjetas).toBe(40_000_00);
+    expect(ene.vencidoTarjetas.visa).toBe(40_000_00);
+    expect(ene.pagosTarjeta[0].monto).toBe(40_000_00);
+    expect(ene.impagoTarjetas).toBe(0);
+  });
+
+  it("un pago cargado a mano reemplaza al automático; sin pago automático, solo cuenta lo cargado", () => {
+    const pago: Movimiento = {
+      id: "pago",
+      fecha: "2026-12-02",
+      descripcion: "Pago de tarjeta",
+      tipo: "transferencia",
+      monto: 30_000_00,
+      cuentaId: "banco",
+      cuentaDestinoId: "visa",
+      estado: "real",
+      origen: { tipo: "manual" },
+    };
+    const datos = vacio();
+    datos.cuentas = [{ ...banco, saldoInicial: 500_000_00 }, ahorro, visa];
+    datos.movimientos.push(compraVisa(100_000_00), pago);
+    const [, dic] = calcularPrevision(datos, { desde: "2026-11", meses: 2 });
+    expect(dic.pagosTarjeta).toEqual([]);
+    expect(dic.saldos.banco).toBe(470_000_00);
+    expect(dic.impagoTarjetas).toBe(70_000_00);
+    // El gasto se cuenta igual el mes del vencimiento; el pago es un movimiento entre cuentas.
+    expect(dic.egresos).toBe(100_000_00);
+
+    const manual = vacio();
+    manual.cuentas = [{ ...banco, saldoInicial: 500_000_00 }, ahorro, { ...visa, tarjeta: { ...visa.tarjeta!, pagoAutomatico: false } }];
+    manual.movimientos.push(compraVisa(100_000_00));
+    const [, dicManual] = calcularPrevision(manual, { desde: "2026-11", meses: 2 });
+    expect(dicManual.pagosTarjeta).toEqual([]);
+    expect(dicManual.impagoTarjetas).toBe(100_000_00);
   });
 
   it("el saldo inicial de la tarjeta se paga el primer mes", () => {
@@ -146,7 +214,7 @@ describe("previsión", () => {
 
   it("no cuenta dos veces lo que ya está en el saldo inicial de la tarjeta", () => {
     const datos = vacio();
-    datos.cuentas = [banco, ahorro, { ...visa, saldoInicial: 300_000_00 }];
+    datos.cuentas = [{ ...banco, saldoInicial: 400_000_00 }, ahorro, { ...visa, saldoInicial: 300_000_00 }];
     datos.movimientos.push({
       id: "octubre",
       fecha: "2026-10-10", // resumen de octubre: cierra el 25/10 y se paga en noviembre

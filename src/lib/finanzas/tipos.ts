@@ -31,6 +31,11 @@ export interface ConfigTarjeta {
   diaVencimiento: number;
   /** Cuenta desde la que se paga el resumen. */
   cuentaPagoId: string;
+  /**
+   * Si es true (o falta), al vencimiento se paga solo lo vencido, hasta el saldo positivo de la cuenta
+   * de pago. Si es false, solo cuentan los pagos cargados a mano (transferencias a la tarjeta).
+   */
+  pagoAutomatico?: boolean;
   /** Cierres y vencimientos reales de cada mes (varían mes a mes). */
   ciclos: CicloTarjeta[];
 }

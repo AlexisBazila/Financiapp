@@ -45,7 +45,12 @@ export async function guardarCuenta(id: string | null, _: Resultado, form: FormD
       return { error: "Los días de cierre y vencimiento van del 1 al 31." };
     }
     if (!cuentaPago || cuentaPago === id) return { error: "Elegí desde qué cuenta pagás la tarjeta." };
-    Object.assign(fila, { dia_cierre: diaCierre, dia_vencimiento: diaVencimiento, cuenta_pago_id: cuentaPago });
+    Object.assign(fila, {
+      dia_cierre: diaCierre,
+      dia_vencimiento: diaVencimiento,
+      cuenta_pago_id: cuentaPago,
+      pago_automatico: form.get("pago_automatico") === "on",
+    });
   }
 
   if (id && esTarjeta) {

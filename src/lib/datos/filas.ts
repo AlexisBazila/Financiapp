@@ -23,6 +23,7 @@ export interface FilaCuenta {
   cuenta_pago_id: string | null;
   archivada: boolean;
   titular: string | null;
+  pago_automatico: boolean;
 }
 
 export interface FilaCiclo {
@@ -114,6 +115,7 @@ export function aCuenta(fila: FilaCuenta, ciclos: FilaCiclo[]): Cuenta {
       diaCierre: fila.dia_cierre,
       diaVencimiento: fila.dia_vencimiento,
       cuentaPagoId: fila.cuenta_pago_id,
+      pagoAutomatico: fila.pago_automatico,
       ciclos: ciclos
         .filter((c) => c.cuenta_id === fila.id)
         .map((c): CicloTarjeta => ({ mes: c.mes, cierre: c.cierre, vencimiento: c.vencimiento })),
