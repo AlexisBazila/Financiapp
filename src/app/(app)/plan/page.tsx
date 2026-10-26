@@ -9,16 +9,28 @@ import { caja, textoSuave } from "../../estilos";
 import { pesosExactos } from "../../formato";
 import {
   BotonBorrar,
+  ConfirmarCuota,
   ConfirmarPendiente,
+  EditarPrestamo,
   FormularioCuotas,
   FormularioPrestamo,
   FormularioRecurrente,
 } from "./formularios";
 
-/** "cuota 4 de 12 · restan $ 512.000" según las cuotas que ya vencieron hasta hoy. */
-function progreso(cuotas: Movimiento[], hoy: string): string {
-  const pagadas = cuotas.filter((c) => c.fecha <= hoy).length;
-  const restante = cuotas.filter((c) => c.fecha > hoy).reduce((s, c) => s + c.monto, 0);
+/**
+ * "cuota 4 de 12 · restan $ 512.000": las de antes de empezar a usar la app, las confirmadas y, si se debitan
+ * solas, las que ya vencieron hasta hoy.
+ */
+function progreso(
+  cuotas: Movimiento[],
+  hoy: string,
+  { inicio = "", confirmadas = new Set<number>(), soloConfirmadas = false } = {},
+): string {
+  const numero = (c: Movimiento) => (c.origen.tipo === "prestamo" || c.origen.tipo === "cuotas" ? c.origen.numero : 0);
+  const paga = (c: Movimiento) =>
+    c.fecha < inicio || confirmadas.has(numero(c)) || (!soloConfirmadas && c.fecha <= hoy);
+  const pagadas = cuotas.filter(paga).length;
+  const restante = cuotas.filter((c) => !paga(c)).reduce((s, c) => s + c.monto, 0);
   if (pagadas >= cuotas.length) return "terminado";
   const actual = pagadas === 0 ? `empieza en ${nombreMes(mesDe(cuotas[0].fecha))}` : `cuota ${pagadas} de ${cuotas.length}`;
   return `${actual} · restan $ ${pesosExactos(restante)}`;
@@ -36,10 +48,34 @@ export default async function Plan() {
   const categorias = todas.filter((c) => !c.archivada);
   const cuotasDePrestamos = categorias.find((c) => c.tipo === "egreso" && c.nombre === "Cuotas de préstamos")?.id;
 
-  const pendientes = datos.recurrentes
-    .filter((r) => r.requiereConfirmacion)
-    .flatMap((r) => instanciarRecurrente(r, datos.movimientos, hogar.mesInicio, mesActual))
-    .sort((a, b) => a.fecha.localeCompare(b.fecha));
+  /** Números de cuota ya cargados de cada préstamo (confirmados a mano). */
+  const confirmadas = new Map<string, Set<number>>();
+  for (const m of datos.movimientos) {
+    if (m.origen.tipo !== "prestamo" || m.estado !== "real") continue;
+    const set = confirmadas.get(m.origen.prestamoId) ?? new Set<number>();
+    set.add(m.origen.numero);
+    confirmadas.set(m.origen.prestamoId, set);
+  }
+  const cargadas = new Set(
+    datos.movimientos.flatMap((m) => (m.origen.tipo === "prestamo" ? [`${m.origen.prestamoId}:${m.origen.numero}`] : [])),
+  );
+  const finDeMes = `${mesActual}-31`;
+  const pendientes = [
+    ...datos.recurrentes
+      .filter((r) => r.requiereConfirmacion)
+      .flatMap((r) => instanciarRecurrente(r, datos.movimientos, hogar.mesInicio, mesActual)),
+    ...datos.prestamos
+      .filter((p) => p.requiereConfirmacion)
+      .flatMap(generarCuotasPrestamo)
+      .filter(
+        (c) =>
+          c.estado === "pendiente" &&
+          c.origen.tipo === "prestamo" &&
+          c.fecha >= `${hogar.mesInicio}-01` &&
+          c.fecha <= finDeMes &&
+          !cargadas.has(`${c.origen.prestamoId}:${c.origen.numero}`),
+      ),
+  ].sort((a, b) => a.fecha.localeCompare(b.fecha));
 
   if (activas.length === 0) {
     return (
@@ -65,10 +101,12 @@ export default async function Plan() {
                 <div className="text-sm">
                   <span className="font-medium">{p.descripcion}</span>{" "}
                   <span className={textoSuave}>
-                    · {nombreMes(p.origen.tipo === "recurrente" ? p.origen.mes : mesDe(p.fecha))} · estimado $
+                    · {nombreMes(p.origen.tipo === "recurrente" ? p.origen.mes : mesDe(p.fecha))} ·{" "}
+                    {p.origen.tipo === "prestamo" ? "cuota" : "estimado"} $
                     {pesosExactos(p.monto)}
                   </span>
                 </div>
+                {p.origen.tipo === "prestamo" && <ConfirmarCuota mov={p} />}
                 {p.origen.tipo === "recurrente" && (
                   <ConfirmarPendiente
                     recurrenteId={p.origen.recurrenteId}
@@ -117,7 +155,8 @@ export default async function Plan() {
         {datos.prestamos.length > 0 && (
           <ul className={`${caja} divide-y divide-black/5 dark:divide-white/10`}>
             {datos.prestamos.map((p) => {
-              const cuotas = generarCuotasPrestamo(p);
+              const cuotas = generarCuotasPrestamo(p).filter((c) => c.tipo === "egreso");
+              const iguales = cuotas.every((c) => c.monto === cuotas[0]?.monto);
               return (
                 <li key={p.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 text-sm">
                   <span className="min-w-48 flex-1">
@@ -125,10 +164,29 @@ export default async function Plan() {
                     <span className={`block text-xs ${textoSuave}`}>
                       {cuentasPorId.get(p.cuentaId)?.nombre}
                       {p.contraparte && ` → ${p.contraparte}`} · {cuotas.length} cuotas
-                      {p.sistema === "manual" ? " cargadas a mano" : ` · ${p.tasaAnual}% anual`}
+                      {p.sistema !== "manual"
+                        ? ` · ${p.tasaAnual}% anual`
+                        : iguales && cuotas.length > 0
+                          ? ` de $ ${pesosExactos(cuotas[0].monto)}`
+                          : " cargadas a mano"}
+                      {p.requiereConfirmacion ? " · se confirma cada cuota" : " · se debita sola"}
+                      {p.ingreso && ` · entró $ ${pesosExactos(p.ingreso.monto)} en ${nombreMes(p.ingreso.mes)}`}
                     </span>
                   </span>
-                  <span className={textoSuave}>{cuotas.length > 0 && progreso(cuotas, hoy)}</span>
+                  <span className={textoSuave}>
+                    {cuotas.length > 0 && progreso(cuotas, hoy, {
+                        inicio: `${hogar.mesInicio}-01`,
+                        confirmadas: confirmadas.get(p.id),
+                        soloConfirmadas: p.requiereConfirmacion,
+                      })}
+                  </span>
+                  <EditarPrestamo
+                    inicial={p}
+                    cuentas={sinTarjetas}
+                    categorias={categorias}
+                    contrapartes={contrapartes}
+                    hoy={hoy}
+                  />
                   <BotonBorrar tabla="prestamos" id={p.id} pregunta={`¿Borrar el préstamo "${p.descripcion}"?`} />
                 </li>
               );

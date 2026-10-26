@@ -69,28 +69,52 @@ export function generarCuotasPlan(plan: PlanCuotas, cuenta: Cuenta): Movimiento[
   });
 }
 
+/** Cuotas de un préstamo según su sistema, o las cargadas a mano. */
+export function montosPrestamo(prestamo: Prestamo): Centavos[] {
+  if (prestamo.sistema === "manual") return prestamo.cuotasManuales ?? [];
+  if (prestamo.sistema === "aleman") return cuotasAlemanas(prestamo.capital, prestamo.tasaAnual, prestamo.cantidad);
+  return cuotasFrancesas(prestamo.capital, prestamo.tasaAnual, prestamo.cantidad);
+}
+
+/**
+ * Cuotas de un préstamo, una por mes desde la primera, y la plata que entra si se eligió registrarla
+ * (origen con número 0). Si el préstamo se confirma a mano, las cuotas quedan pendientes.
+ */
 export function generarCuotasPrestamo(prestamo: Prestamo): Movimiento[] {
-  const montos =
-    prestamo.sistema === "manual"
-      ? (prestamo.cuotasManuales ?? [])
-      : prestamo.sistema === "aleman"
-        ? cuotasAlemanas(prestamo.capital, prestamo.tasaAnual, prestamo.cantidad)
-        : cuotasFrancesas(prestamo.capital, prestamo.tasaAnual, prestamo.cantidad);
+  const montos = montosPrestamo(prestamo);
   const total = montos.length;
   const primerMes = mesDe(prestamo.primeraCuota);
   const dia = diaDe(prestamo.primeraCuota);
+  const comun = {
+    cuentaId: prestamo.cuentaId,
+    contraparte: prestamo.contraparte,
+  };
 
-  return montos.map((monto, k) => ({
+  const cuotas: Movimiento[] = montos.map((monto, k) => ({
+    ...comun,
     id: `${prestamo.id}#${k + 1}`,
     fecha: fechaEnMes(sumarMeses(primerMes, k), dia),
     descripcion: `${prestamo.descripcion} (${k + 1}/${total})`,
     tipo: "egreso",
     monto,
-    cuentaId: prestamo.cuentaId,
     categoria: prestamo.categoria,
     categoriaId: prestamo.categoriaId,
-    contraparte: prestamo.contraparte,
-    estado: "planificado",
+    estado: prestamo.requiereConfirmacion ? "pendiente" : "planificado",
     origen: { tipo: "prestamo", prestamoId: prestamo.id, numero: k + 1, total },
   }));
+  if (!prestamo.ingreso) return cuotas;
+  return [
+    {
+      ...comun,
+      id: `${prestamo.id}#0`,
+      fecha: fechaEnMes(prestamo.ingreso.mes, dia),
+      descripcion: prestamo.descripcion,
+      tipo: "ingreso",
+      monto: prestamo.ingreso.monto,
+      categoria: "Préstamos recibidos",
+      estado: "planificado",
+      origen: { tipo: "prestamo", prestamoId: prestamo.id, numero: 0, total },
+    },
+    ...cuotas,
+  ];
 }

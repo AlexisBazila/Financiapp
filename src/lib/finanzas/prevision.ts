@@ -1,5 +1,5 @@
 import { generarCuotasPlan, generarCuotasPrestamo } from "./cuotas";
-import { diasDelMes, fechaEnMes, mesDe, rangoMeses, sumarMeses } from "./fechas";
+import { diasDelMes, fechaEnMes, mesDe, mesesEntre, rangoMeses, sumarMeses } from "./fechas";
 import { instanciarRecurrente } from "./recurrentes";
 import { cicloDe, resumenDeFecha } from "./tarjeta";
 import type { Centavos, Cuenta, Datos, Estado, Fecha, Mes, Movimiento, ObjetivoAhorro, Presupuesto } from "./tipos";
@@ -224,7 +224,11 @@ function itemDe(mov: Movimiento): Omit<DetalleItem, "monto" | "certeza"> {
     categoriaId: mov.categoriaId,
   };
   if (o.tipo === "cuotas") return { ...base, clave: `cuotas:${o.planId}`, cuota: `${o.numero}/${o.total}` };
-  if (o.tipo === "prestamo") return { ...base, clave: `prestamo:${o.prestamoId}`, cuota: `${o.numero}/${o.total}` };
+  if (o.tipo === "prestamo") {
+    // El número 0 es la plata del préstamo que entra.
+    if (o.numero === 0) return { ...base, nombre: mov.descripcion || base.nombre, clave: `prestamo:${o.prestamoId}:ingreso` };
+    return { ...base, clave: `prestamo:${o.prestamoId}`, cuota: `${o.numero}/${o.total}` };
+  }
   if (o.tipo === "recurrente") return { ...base, nombre: mov.descripcion || base.nombre, clave: `recurrente:${o.recurrenteId}` };
   return { ...base, nombre: mov.descripcion || base.nombre, clave: mov.id };
 }
@@ -234,7 +238,7 @@ function efectosDe(mov: Movimiento, cuentas: Map<string, Cuenta>, desde: Mes): E
   if (!cuenta) throw new Error(`No existe la cuenta ${mov.cuentaId}`);
   const categoria = mov.categoria ?? "Sin categoría";
   const certeza = certezaDe(mov);
-  const cuota = claveCuota(mov.origen) !== undefined;
+  const cuota = claveCuota(mov.origen) !== undefined && mov.tipo === "egreso";
   const enPesos = Math.round(mov.monto * cambioDe(cuenta));
   const item = itemDe(mov);
 
@@ -558,7 +562,14 @@ function resumenPresupuesto(
         mesDeGasto(m, cuentas) === mes,
     )
     .reduce((total, m) => total + Math.round(m.monto * (cuentas.get(m.cuentaId)?.cambio ?? 1)), 0);
-  return { id: p.id, nombre: p.nombre, monto: p.monto, gastado, resto: p.monto - gastado };
+  const monto = montoPresupuesto(p, mes);
+  return { id: p.id, nombre: p.nombre, monto, gastado, resto: monto - gastado };
+}
+
+/** Monto de un presupuesto en un mes, con el aumento mensual acumulado desde que empieza. */
+export function montoPresupuesto(p: Pick<Presupuesto, "monto" | "aumentoMensual" | "desde">, mes: Mes): Centavos {
+  if (!p.aumentoMensual || mes <= p.desde) return p.monto;
+  return Math.round(p.monto * Math.pow(1 + p.aumentoMensual / 100, mesesEntre(p.desde, mes)));
 }
 
 /**

@@ -2,11 +2,21 @@ import { describe, expect, it } from "vitest";
 import { cuotasAlemanas, cuotasFrancesas, generarCuotasPlan, repartir } from "./cuotas";
 import { consolidarEscenario, aplicarEscenario } from "./escenarios";
 import { sumarMeses } from "./fechas";
-import { calcularPrevision, categoriaResto } from "./prevision";
+import { calcularPrevision, categoriaResto, montoPresupuesto } from "./prevision";
 import { confirmar, instanciarRecurrente } from "./recurrentes";
 import { estadoTarjeta, periodoDe } from "./estado-tarjeta";
 import { resumenDeFecha } from "./tarjeta";
-import type { Cuenta, Datos, Escenario, Movimiento, ObjetivoAhorro, PlanCuotas, Presupuesto, Recurrente } from "./tipos";
+import type {
+  Cuenta,
+  Datos,
+  Escenario,
+  Movimiento,
+  ObjetivoAhorro,
+  PlanCuotas,
+  Prestamo,
+  Presupuesto,
+  Recurrente,
+} from "./tipos";
 
 const banco: Cuenta = { id: "banco", nombre: "Banco", tipo: "banco", disponibilidad: "inmediata", saldoInicial: 0 };
 const ahorro: Cuenta = { id: "ahorro", nombre: "Ahorro", tipo: "banco", disponibilidad: "reserva", saldoInicial: 0 };
@@ -687,5 +697,77 @@ describe("objetivos de ahorro", () => {
     const [nov, dic] = calcularPrevision(conAhorro(ahorroMensual), { desde: "2026-11", meses: 2, mesActual: "2026-12" });
     expect(nov.objetivos[0].previsto).toBe(0);
     expect(dic.objetivos[0].previsto).toBe(100_000_00);
+  });
+});
+
+describe("aumento mensual de los presupuestos", () => {
+  it("cada mes es el anterior más el %, desde que empieza", () => {
+    const p = { monto: 100_000_00, aumentoMensual: 2, desde: "2026-11" };
+    expect(montoPresupuesto(p, "2026-10")).toBe(100_000_00);
+    expect(montoPresupuesto(p, "2026-11")).toBe(100_000_00);
+    expect(montoPresupuesto(p, "2026-12")).toBe(102_000_00);
+    expect(montoPresupuesto(p, "2027-01")).toBe(104_040_00);
+  });
+
+  it("la previsión usa el monto con aumento", () => {
+    const presupuesto: Presupuesto = {
+      id: "super",
+      nombre: "Súper",
+      icono: "🛒",
+      monto: 100_000_00,
+      aumentoMensual: 3,
+      cuentaId: "banco",
+      desde: "2026-11",
+      categoriaIds: ["alimentos"],
+    };
+    const [nov, dic] = calcularPrevision({ ...vacio(), presupuestos: [presupuesto] }, { desde: "2026-11", meses: 2 });
+    expect(nov.presupuestos[0].monto).toBe(100_000_00);
+    expect(dic.presupuestos[0].monto).toBe(103_000_00);
+    expect(dic.egresos).toBe(103_000_00);
+  });
+});
+
+describe("préstamos", () => {
+  const prestamo: Prestamo = {
+    id: "freno",
+    descripcion: "Crédito freno",
+    categoria: "Cuotas de préstamos",
+    cuentaId: "banco",
+    capital: 300_000_00,
+    primeraCuota: "2026-04-08",
+    cantidad: 12,
+    tasaAnual: 59,
+    sistema: "manual",
+    cuotasManuales: Array(12).fill(35_569_78),
+  };
+  const conPrestamo = (p: Prestamo): Datos => ({ ...vacio(), prestamos: [p] });
+
+  it("las cuotas se debitan de la cuenta elegida cada mes, desde la primera", () => {
+    const [nov, , , , mar, abr] = calcularPrevision(conPrestamo(prestamo), { desde: "2026-11", meses: 6 });
+    expect(nov.egresos).toBe(35_569_78);
+    expect(nov.saldos.banco).toBe(-35_569_78);
+    expect(mar.egresos).toBe(35_569_78);
+    expect(abr.egresos).toBe(0);
+    expect(nov.ingresos).toBe(0);
+  });
+
+  it("si se confirma a mano, la cuota queda pendiente: cuenta en el plan pero no en lo real", () => {
+    const datos = conPrestamo({ ...prestamo, requiereConfirmacion: true });
+    const [plan] = calcularPrevision(datos, { desde: "2026-11", meses: 1 });
+    expect(plan).toMatchObject({ egresos: 35_569_78, pendientes: 1 });
+    const [real] = calcularPrevision(datos, { desde: "2026-11", meses: 1, estados: ["real"] });
+    expect(real.egresos).toBe(0);
+  });
+
+  it("puede registrar la plata que entra en el mes elegido, aunque las cuotas empiecen después", () => {
+    const datos = conPrestamo({ ...prestamo, primeraCuota: "2027-04-08", ingreso: { mes: "2027-02", monto: 300_000_00 } });
+    const meses = calcularPrevision(datos, { desde: "2027-02", meses: 3 });
+    expect(meses.map((m) => [m.ingresos, m.egresos])).toEqual([
+      [300_000_00, 0],
+      [0, 0],
+      [0, 35_569_78],
+    ]);
+    expect(meses[0].ingresosPorCategoria).toEqual({ "Préstamos recibidos": 300_000_00 });
+    expect(meses[0].deudaCuotas).toBe(12 * 35_569_78);
   });
 });

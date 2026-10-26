@@ -22,12 +22,14 @@ export async function guardarPresupuesto(id: string | null, _: Resultado, form: 
   const hasta = repite ? texto(form, "hasta") : desde;
   const categoriaIds = form.getAll("categoria_ids").filter((v): v is string => typeof v === "string" && v !== "");
   const algunas = texto(form, "cuentas") === "algunas";
+  const aumento = repite ? Number(texto(form, "aumento_mensual").replace(",", ".") || 0) : 0;
   const cuentaIds = form.getAll("cuenta_ids").filter((v): v is string => typeof v === "string" && v !== "");
 
   if (!nombre || nombre.length > 60) return { error: "Poné un nombre de hasta 60 letras." };
   if ([...icono].length > 4) return { error: "El ícono tiene que ser un solo emoji." };
   if (!monto || monto <= 0) return { error: "El monto tiene que ser un número mayor a cero." };
   if (!cuentaId) return { error: "Elegí la cuenta." };
+  if (!Number.isFinite(aumento) || aumento < 0 || aumento > 100) return { error: "El aumento va de 0 a 100 %." };
   if (!MES.test(desde)) return { error: "Elegí desde qué mes." };
   if (hasta && (!MES.test(hasta) || hasta < desde)) return { error: "El mes final tiene que ser posterior al inicial." };
   if (categoriaIds.length === 0) return { error: "Elegí al menos una categoría." };
@@ -37,6 +39,7 @@ export async function guardarPresupuesto(id: string | null, _: Resultado, form: 
     nombre,
     icono,
     monto,
+    aumento_mensual: Math.round(aumento * 100) / 100,
     cuenta_id: cuentaId,
     desde,
     hasta: hasta || null,
