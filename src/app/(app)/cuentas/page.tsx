@@ -1,10 +1,15 @@
 import Link from "next/link";
 import { cargarHogar } from "@/lib/datos/cargar";
+import { estadoTarjeta, periodoDe } from "@/lib/finanzas/estado-tarjeta";
+import { hoy, sumarMeses } from "@/lib/finanzas/fechas";
+import { disponibilidadDe } from "@/lib/finanzas/prevision";
+import { resumenDeFecha } from "@/lib/finanzas/tarjeta";
 import type { Cuenta } from "@/lib/finanzas/tipos";
 import { requerirUsuario } from "@/lib/supabase/servidor";
 import { caja, textoSuave } from "../../estilos";
 import { pesosExactos } from "../../formato";
 import { simbolo } from "@/lib/datos/monedas";
+import { tituloMes } from "../movimientos/lista";
 import {
   BotonArchivar,
   FormularioCiclo,
@@ -12,6 +17,7 @@ import {
   FormularioCuenta,
   FormularioMesInicio,
 } from "./formularios";
+import { diaMes, TotalesTarjeta } from "./totales-tarjeta";
 
 /** Saldo inicial en la moneda de la cuenta: verde si hay plata, rojo y negativo si es deuda. */
 function Saldo({ cuenta }: { cuenta: Cuenta }) {
@@ -48,6 +54,9 @@ const DISPONIBILIDAD: Record<string, string> = {
   reserva: "Reserva de ahorro",
 };
 
+/** Períodos que se muestran para revisar sus fechas: el anterior, el actual y los dos siguientes. */
+const PERIODOS = [-1, 0, 1, 2];
+
 export default async function Cuentas() {
   const { supabase } = await requerirUsuario();
   const { hogar, datos, cuentasActivas, cotizaciones } = await cargarHogar(supabase);
@@ -55,6 +64,7 @@ export default async function Cuentas() {
   const monedas = [...new Set(activas.flatMap((c) => (c.moneda ? [c.moneda] : [])))];
   const cuentasPago = activas.filter((c) => !c.tarjeta).map((c) => ({ id: c.id, nombre: c.nombre }));
   const titulares = [...new Set(datos.cuentas.map((c) => c.titular).filter((t): t is string => Boolean(t)))].sort();
+  const fecha = hoy();
 
   return (
     <div className="flex flex-col gap-8">
@@ -93,14 +103,17 @@ export default async function Cuentas() {
                         ? `Cierra el ${c.tarjeta.diaCierre}, vence el ${c.tarjeta.diaVencimiento} · ${
                             c.tarjeta.pagoAutomatico === false ? "pago a mano" : "pago automático"
                           }`
-                        : DISPONIBILIDAD[c.disponibilidad]}
+                        : `${DISPONIBILIDAD[disponibilidadDe(c)]}${c.moneda ? " (hay que cambiarla)" : ""}`}
                     </div>
                   </div>
                   <div className="flex items-center gap-4">
-                    <Saldo cuenta={c} />
+                    {!c.tarjeta && <Saldo cuenta={c} />}
                     <BotonArchivar id={c.id} />
                   </div>
                 </div>
+                {c.tarjeta && (
+                  <TotalesTarjeta estado={estadoTarjeta(datos, c.id, fecha, hogar.mesInicio)} compacto />
+                )}
                 <details className="text-sm">
                   <summary className={`cursor-pointer ${textoSuave}`}>Editar</summary>
                   <div className="mt-3">
@@ -109,24 +122,35 @@ export default async function Cuentas() {
                 </details>
                 {c.tarjeta && (
                   <details className="text-sm">
-                    <summary className={`cursor-pointer ${textoSuave}`}>
-                      Fechas de cierre de cada mes ({c.tarjeta.ciclos.length} cargadas)
-                    </summary>
-                    <div className="mt-3 flex flex-col gap-3">
-                      <ul className="flex flex-col gap-1">
-                        {[...c.tarjeta.ciclos]
-                          .sort((a, b) => b.mes.localeCompare(a.mes))
-                          .map((ciclo) => (
-                            <li key={ciclo.mes} className="tabular-nums">
-                              {ciclo.mes}: cierra {ciclo.cierre}, vence {ciclo.vencimiento}
-                            </li>
-                          ))}
-                      </ul>
-                      <FormularioCiclo cuentaId={c.id} />
+                    <summary className={`cursor-pointer ${textoSuave}`}>Fechas de cierre y vencimiento de cada mes</summary>
+                    <div className="mt-3 flex flex-col gap-4">
                       <p className={textoSuave}>
-                        Los meses sin fechas cargadas usan el día de cierre y vencimiento habituales. Lo que compres
-                        después del cierre entra en el resumen del mes siguiente.
+                        El cierre cambia mes a mes: confirmá las fechas de cada resumen cuando las sepas (están en el
+                        resumen anterior o en la app del banco). Cada período empieza el día después del cierre
+                        anterior. Los meses sin confirmar usan el día de cierre y vencimiento habituales.
                       </p>
+                      {PERIODOS.map((n) => {
+                        const periodo = periodoDe(c, sumarMeses(resumenDeFecha(c, fecha), n));
+                        return (
+                          <div key={periodo.mes} className="flex flex-col gap-2">
+                            <div className="font-medium">
+                              {tituloMes(periodo.mes)}
+                              <span className={`ml-2 font-normal ${textoSuave}`}>
+                                del {diaMes(periodo.desde)} al {diaMes(periodo.cierre)} · vence el{" "}
+                                {diaMes(periodo.vencimiento)} · {periodo.cargado ? "confirmado" : "habitual, sin confirmar"}
+                                {n === 0 && " · en curso"}
+                              </span>
+                            </div>
+                            <FormularioCiclo
+                              key={`${periodo.cierre}-${periodo.vencimiento}`}
+                              cuentaId={c.id}
+                              mes={periodo.mes}
+                              cierre={periodo.cierre}
+                              vencimiento={periodo.vencimiento}
+                            />
+                          </div>
+                        );
+                      })}
                     </div>
                   </details>
                 )}

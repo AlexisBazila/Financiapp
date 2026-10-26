@@ -109,19 +109,23 @@ export function FormularioCuenta({
             ))}
           </select>
         </label>
+      ) : moneda !== "ARS" ? (
+        <p className="self-end pb-2 text-sm text-black/60 dark:text-white/60">
+          Cuenta como disponible no inmediato: hay que cambiar la moneda para usarla.
+        </p>
       ) : (
         <label className={etiqueta}>
           Disponibilidad
           <select
             name="disponibilidad"
             defaultValue={
-              inicial?.tipo === tipo ? inicial.disponibilidad : tipo === "inversion" || moneda !== "ARS" ? "48h" : "inmediata"
+              inicial?.tipo === tipo && inicial.disponibilidad ? inicial.disponibilidad : tipo === "inversion" ? "48h" : "inmediata"
             }
-            key={`${tipo}-${moneda}`}
+            key={tipo}
             className={campo}
           >
             <option value="inmediata">Disponible para gastar</option>
-            <option value="48h">Disponible no inmediato (FCI, dólares, plazo fijo…)</option>
+            <option value="48h">Disponible no inmediato (FCI, plazo fijo…)</option>
             <option value="reserva">Reserva de ahorro</option>
           </select>
         </label>
@@ -149,6 +153,16 @@ export function FormularioCuenta({
               max={31}
               required
               defaultValue={inicial?.tarjeta?.diaVencimiento}
+              className={campo}
+            />
+          </label>
+          <label className={etiqueta}>
+            Límite de compra (opcional, $)
+            <input
+              name="limite"
+              inputMode="decimal"
+              placeholder="4.000.000"
+              defaultValue={inicial?.tarjeta?.limite ? pesosExactos(inicial.tarjeta.limite) : undefined}
               className={campo}
             />
           </label>
@@ -181,20 +195,31 @@ export function FormularioCuenta({
   );
 }
 
-export function FormularioCiclo({ cuentaId }: { cuentaId: string }) {
-  const [estado, accion, pendiente] = useActionState(guardarCiclo.bind(null, cuentaId), {});
+/** Cierre y vencimiento de un resumen. Con `mes`, el de ese mes, partiendo de las fechas que tiene ahora. */
+export function FormularioCiclo({
+  cuentaId,
+  mes,
+  cierre,
+  vencimiento,
+}: {
+  cuentaId: string;
+  mes?: string;
+  cierre?: string;
+  vencimiento?: string;
+}) {
+  const [estado, accion, pendiente] = useActionState(guardarCiclo.bind(null, cuentaId, mes ?? null), {});
   return (
     <form action={accion} className="flex flex-wrap items-end gap-3">
       <label className={etiqueta}>
         Cierre
-        <input name="cierre" type="date" required className={campo} />
+        <input name="cierre" type="date" required defaultValue={cierre} className={campo} />
       </label>
       <label className={etiqueta}>
         Vencimiento
-        <input name="vencimiento" type="date" required className={campo} />
+        <input name="vencimiento" type="date" required defaultValue={vencimiento} className={campo} />
       </label>
       <button type="submit" disabled={pendiente} className={botonSecundario}>
-        Guardar fechas
+        {mes ? "Confirmar fechas" : "Guardar fechas"}
       </button>
       <Mensaje estado={estado} ok="Guardado." />
     </form>

@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import { cuotasAlemanas, cuotasFrancesas, generarCuotasPlan, repartir } from "./cuotas";
 import { consolidarEscenario, aplicarEscenario } from "./escenarios";
 import { sumarMeses } from "./fechas";
-import { calcularPrevision, CATEGORIA_SALDO_TARJETA, categoriaResto } from "./prevision";
+import { calcularPrevision, categoriaResto } from "./prevision";
 import { confirmar, instanciarRecurrente } from "./recurrentes";
+import { estadoTarjeta, periodoDe } from "./estado-tarjeta";
 import { resumenDeFecha } from "./tarjeta";
 import type { Cuenta, Datos, Escenario, Movimiento, PlanCuotas, Presupuesto, Recurrente } from "./tipos";
 
@@ -114,7 +115,7 @@ describe("recurrentes", () => {
 });
 
 describe("previsión", () => {
-  it("las compras con tarjeta se pagan el mes del vencimiento", () => {
+  it("las compras con tarjeta son gasto del mes del cierre y se pagan el mes del vencimiento", () => {
     const datos = vacio();
     datos.cuentas = [{ ...banco, saldoInicial: 150_000_00 }, ahorro, visa];
     datos.movimientos.push({
@@ -129,9 +130,11 @@ describe("previsión", () => {
       origen: { tipo: "manual" },
     });
     const [nov, dic] = calcularPrevision(datos, { desde: "2026-11", meses: 2 });
-    expect(nov.egresos).toBe(0);
+    expect(nov.egresosPorCategoria["Víveres"]).toBe(100_000_00);
+    expect(nov.disponible).toBe(150_000_00);
     expect(nov.deudaTarjetas).toBe(100_000_00);
-    expect(dic.egresosPorCategoria["Víveres"]).toBe(100_000_00);
+    expect(dic.egresos).toBe(0);
+    expect(dic.venceTarjetas).toBe(100_000_00);
     expect(dic.deudaTarjetas).toBe(0);
     expect(dic.disponible).toBe(50_000_00);
     expect(dic.pagosTarjeta).toEqual([{ tarjetaId: "visa", cuentaId: "banco", monto: 100_000_00, fecha: "2026-12-02" }]);
@@ -203,8 +206,8 @@ describe("previsión", () => {
     expect(dic.pagosTarjeta).toEqual([]);
     expect(dic.saldos.banco).toBe(470_000_00);
     expect(dic.impagoTarjetas).toBe(70_000_00);
-    // El gasto se cuenta igual el mes del vencimiento; el pago es un movimiento entre cuentas.
-    expect(dic.egresos).toBe(100_000_00);
+    // El gasto se contó en noviembre; el pago es un movimiento entre cuentas.
+    expect(dic.egresos).toBe(0);
 
     const manual = vacio();
     manual.cuentas = [{ ...banco, saldoInicial: 500_000_00 }, ahorro, { ...visa, tarjeta: { ...visa.tarjeta!, pagoAutomatico: false } }];
@@ -214,11 +217,12 @@ describe("previsión", () => {
     expect(dicManual.impagoTarjetas).toBe(100_000_00);
   });
 
-  it("el saldo inicial de la tarjeta se paga el primer mes", () => {
+  it("el saldo inicial de la tarjeta se paga el primer mes, sin contarlo como gasto", () => {
     const datos = vacio();
     datos.cuentas = [{ ...banco, saldoInicial: 500_000_00 }, ahorro, { ...visa, saldoInicial: 300_000_00 }];
     const [nov] = calcularPrevision(datos, { desde: "2026-11", meses: 1 });
-    expect(nov.egresosPorCategoria[CATEGORIA_SALDO_TARJETA]).toBe(300_000_00);
+    expect(nov.egresos).toBe(0);
+    expect(nov.venceTarjetas).toBe(300_000_00);
     expect(nov.disponible).toBe(200_000_00);
     expect(nov.deudaTarjetas).toBe(0);
   });
@@ -238,8 +242,24 @@ describe("previsión", () => {
       origen: { tipo: "manual" },
     });
     const [nov] = calcularPrevision(datos, { desde: "2026-11", meses: 1 });
-    expect(nov.egresos).toBe(300_000_00);
+    expect(nov.egresos).toBe(0);
+    expect(nov.disponible).toBe(100_000_00);
     expect(nov.deudaTarjetas).toBe(0);
+  });
+
+  it("una cuenta en otra moneda cuenta como no inmediata aunque esté marcada como reserva", () => {
+    const dolares: Cuenta = {
+      id: "usd",
+      nombre: "Caja USD",
+      tipo: "efectivo",
+      disponibilidad: "reserva",
+      saldoInicial: 100_00,
+      moneda: "USD",
+      cambio: 1_545,
+    };
+    const [nov] = calcularPrevision({ ...vacio(), cuentas: [banco, ahorro, visa, dolares] }, { desde: "2026-11", meses: 1 });
+    expect(nov.disponible48h).toBe(154_500_00);
+    expect(nov.reserva).toBe(0);
   });
 
   it("una cuenta en dólares suma en pesos con su tipo de cambio", () => {
@@ -364,7 +384,8 @@ describe("previsión", () => {
     const confirmada = { ...primera, id: "uuid-1", estado: "real" as const, monto: 99_000_00, conciliado: true };
     const datos = { ...vacio(), planesCuotas: [tele], movimientos: [confirmada] };
     const p = calcularPrevision(datos, { desde: "2026-11", meses: 5 });
-    expect(p[2].egresos).toBe(99_000_00);
+    // Resumen de diciembre: gasto de diciembre, se paga en enero.
+    expect(p[1].egresos).toBe(99_000_00);
     expect(p[0].deudaCuotas).toBe(299_000_00);
   });
 });
@@ -482,6 +503,28 @@ describe("presupuestos", () => {
     expect(nov.egresos).toBe(130_000_00);
   });
 
+  it("con tarjeta, cuenta en el mes del resumen y lo que resta va al resumen de ese mes", () => {
+    // Octubre cierra el 25: lo comprado el 27/10 es del resumen de noviembre.
+    const enVisa = { ...gasto("super-visa", "2026-10-27", 40_000_00, "super"), cuentaId: "visa" };
+    const datos: Datos = { ...vacio(), presupuestos: [{ ...viveres, cuentaId: "visa" }], movimientos: [enVisa] };
+    const [oct, nov, dic] = calcularPrevision(datos, { desde: "2026-10", meses: 3 });
+    expect(oct.egresos).toBe(0);
+    expect(nov.presupuestos[0].gastado).toBe(40_000_00);
+    expect(nov.egresosPorCategoria["Alimentos"]).toBe(40_000_00);
+    expect(nov.egresosPorCategoria[categoriaResto(viveres)]).toBe(1_160_000_00);
+    // Todo el presupuesto de noviembre es deuda del resumen de noviembre, que vence en diciembre.
+    expect(nov.consumoTarjetas).toBe(1_200_000_00);
+    expect(dic.venceTarjetas).toBe(1_200_000_00);
+  });
+
+  it("con tarjeta, si el resumen del mes ya cerró, no prevé lo que resta", () => {
+    const datos: Datos = { ...vacio(), presupuestos: [{ ...viveres, cuentaId: "visa" }] };
+    // Noviembre cierra el 20: el 22/11 su período ya pasó.
+    const [nov, dic] = calcularPrevision(datos, { desde: "2026-11", meses: 2, mesActual: "2026-11", hoy: "2026-11-22" });
+    expect(nov.egresos).toBe(0);
+    expect(dic.egresos).toBe(1_200_000_00);
+  });
+
   it("en los meses pasados no prevé lo que no se gastó", () => {
     const datos: Datos = { ...vacio(), presupuestos: [viveres] };
     const [nov, dic] = calcularPrevision(datos, { desde: "2026-11", meses: 2, mesActual: "2026-12" });
@@ -499,5 +542,66 @@ describe("presupuestos", () => {
     };
     const [nov] = calcularPrevision(datos, { desde: "2026-11", meses: 1 });
     expect(nov.celdas["egreso:Alimentos"]).toEqual({ certeza: "planificado", cuotas: false });
+  });
+});
+
+describe("estado de la tarjeta", () => {
+  // Como la Visa de Alexis: octubre cerró el 22/10, noviembre cierra el 19/11 y vence el 1/12.
+  const macro: Cuenta = {
+    ...visa,
+    tarjeta: {
+      diaCierre: 20,
+      diaVencimiento: 1,
+      cuentaPagoId: "banco",
+      limite: 4_000_000_00,
+      ciclos: [
+        { mes: "2026-10", cierre: "2026-10-22", vencimiento: "2026-11-02" },
+        { mes: "2026-11", cierre: "2026-11-19", vencimiento: "2026-12-01" },
+      ],
+    },
+  };
+  const compra = (id: string, fecha: string, monto: number): Movimiento => ({
+    id,
+    fecha,
+    descripcion: id,
+    tipo: "egreso",
+    monto,
+    cuentaId: "visa",
+    categoria: "Alimentos",
+    estado: "real",
+    origen: { tipo: "manual" },
+  });
+  const datos = (): Datos => ({
+    ...vacio(),
+    cuentas: [{ ...banco, saldoInicial: 3_000_000_00 }, ahorro, macro],
+    movimientos: [compra("octubre", "2026-10-21", 2_000_000_00), compra("super", "2026-10-23", 150_000_00)],
+    planesCuotas: [
+      { id: "tele", descripcion: "Tele", categoria: "Hogar", cuentaId: "visa", fechaCompra: "2026-10-24", montoTotal: 300_000_00, cantidad: 3 },
+    ],
+  });
+
+  it("el período va del día siguiente al cierre anterior hasta el cierre", () => {
+    expect(periodoDe(macro, "2026-11")).toEqual({
+      mes: "2026-11",
+      desde: "2026-10-23",
+      cierre: "2026-11-19",
+      vencimiento: "2026-12-01",
+      cargado: true,
+    });
+    expect(periodoDe(macro, "2026-12")).toMatchObject({ desde: "2026-11-20", cierre: "2026-12-20", cargado: false });
+  });
+
+  it("antes del vencimiento debe lo cerrado más el período en curso; las cuotas futuras ocupan el límite", () => {
+    const estado = estadoTarjeta(datos(), "visa", "2026-10-26", "2026-10");
+    expect(estado.periodo.mes).toBe("2026-11");
+    expect(estado.consumoPeriodo).toBe(150_000_00 + 100_000_00);
+    expect(estado.deudaTotal).toBe(2_000_000_00 + 250_000_00);
+    expect(estado.cuotasFuturas).toBe(200_000_00);
+    expect(estado.disponible).toBe(4_000_000_00 - 2_250_000_00 - 200_000_00);
+  });
+
+  it("después del vencimiento descuenta el pago automático", () => {
+    const estado = estadoTarjeta(datos(), "visa", "2026-11-05", "2026-10");
+    expect(estado.deudaTotal).toBe(250_000_00);
   });
 });

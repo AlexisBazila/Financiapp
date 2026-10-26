@@ -2,9 +2,7 @@ import { generarCuotasPlan, generarCuotasPrestamo } from "./cuotas";
 import { fechaEnMes, mesDe, rangoMeses, sumarMeses } from "./fechas";
 import { instanciarRecurrente } from "./recurrentes";
 import { cicloDe, resumenDeFecha } from "./tarjeta";
-import type { Centavos, Cuenta, Datos, Estado, Mes, Movimiento, Presupuesto } from "./tipos";
-
-export const CATEGORIA_SALDO_TARJETA = "Tarjeta (resumen anterior)";
+import type { Centavos, Cuenta, Datos, Estado, Fecha, Mes, Movimiento, Presupuesto } from "./tipos";
 
 /** Qué tan seguro es un monto: planificado, ya pasó, o ya pasó y se chequeó con el banco. */
 export type Certeza = "planificado" | "real" | "conciliado";
@@ -20,7 +18,7 @@ export interface MesPresupuesto {
   id: string;
   nombre: string;
   monto: Centavos;
-  /** Gastado en sus categorías, por fecha de compra. */
+  /** Gastado en sus categorías: por fecha, o por el mes del resumen si es con tarjeta. */
   gastado: Centavos;
   /** monto - gastado; negativo si se pasó. */
   resto: Centavos;
@@ -98,6 +96,11 @@ export interface OpcionesPrevision {
    * pasados, lo que no se gastó no se va a gastar. Sin `mesActual`, se prevé en todos.
    */
   mesActual?: Mes;
+  /**
+   * Fecha de hoy. Si un presupuesto sale de una tarjeta y el resumen de su mes ya cerró, lo que resta
+   * tampoco se prevé: el período ya pasó.
+   */
+  hoy?: Fecha;
 }
 
 /** Clave de una cuota generada, para reconocerla cuando ya se cargó (confirmada o editada). */
@@ -133,6 +136,21 @@ export function mesDePago(mov: Movimiento, cuentas: Map<string, Cuenta>): Mes {
   const cuenta = cuentas.get(mov.cuentaId);
   if (!cuenta?.tarjeta || mov.tipo === "transferencia") return mesDe(mov.fecha);
   return mesDe(cicloDe(cuenta, mov.mesResumen ?? resumenDeFecha(cuenta, mov.fecha)).vencimiento);
+}
+
+/**
+ * Mes en que se cuenta el gasto de un movimiento: el de su fecha o, si es con tarjeta, el del cierre de
+ * su resumen (el período del 23/10 al 19/11 es noviembre).
+ */
+export function mesDeGasto(mov: Movimiento, cuentas: Map<string, Cuenta>): Mes {
+  const cuenta = cuentas.get(mov.cuentaId);
+  if (!cuenta?.tarjeta || mov.tipo === "transferencia") return mesDe(mov.fecha);
+  return mesDe(cicloDe(cuenta, mov.mesResumen ?? resumenDeFecha(cuenta, mov.fecha)).cierre);
+}
+
+/** Cuentas en otra moneda: cuentan como no inmediatas, porque hay que cambiarlas para gastarlas. */
+export function disponibilidadDe(c: Cuenta): Cuenta["disponibilidad"] {
+  return c.moneda && c.moneda !== "ARS" ? "48h" : c.disponibilidad;
 }
 
 /** Un efecto de un movimiento sobre una cuenta en un mes. */
@@ -171,7 +189,10 @@ const cambioDe = (c: Cuenta) => c.cambio ?? 1;
 /** Cómo aparece un movimiento en el detalle de su categoría. */
 function itemDe(mov: Movimiento): Omit<DetalleItem, "monto" | "certeza"> {
   const o = mov.origen;
-  const base = { nombre: mov.descripcion.replace(/\s*\(\d+\/\d+\)$/, "") || mov.categoria || "Sin descripción", categoriaId: mov.categoriaId };
+  const base = {
+    nombre: mov.descripcion.replace(/\s*\(\d+\/\d+\)$/, "") || mov.contraparte || mov.categoria || "Sin descripción",
+    categoriaId: mov.categoriaId,
+  };
   if (o.tipo === "cuotas") return { ...base, clave: `cuotas:${o.planId}`, cuota: `${o.numero}/${o.total}` };
   if (o.tipo === "prestamo") return { ...base, clave: `prestamo:${o.prestamoId}`, cuota: `${o.numero}/${o.total}` };
   if (o.tipo === "recurrente") return { ...base, nombre: mov.descripcion || base.nombre, clave: `recurrente:${o.recurrenteId}` };
@@ -218,31 +239,32 @@ function efectosDe(mov: Movimiento, cuentas: Map<string, Cuenta>, desde: Mes): E
     ];
   }
 
-  // Tarjeta: la deuda sube al cierre del resumen y vence al vencimiento. El gasto se cuenta el mes del
-  // vencimiento, como en la planilla; la plata sale con el pago del resumen (ver calcularPrevision).
+  // Tarjeta: el gasto se cuenta el mes del cierre del resumen, que es cuando sube la deuda. La deuda vence
+  // el mes siguiente y la plata sale con el pago del resumen (ver calcularPrevision).
   const ciclo = cicloDe(cuenta, mov.mesResumen ?? resumenDeFecha(cuenta, mov.fecha));
   // Un resumen que cerró antes de `desde` ya está incluido en el saldo inicial de la tarjeta.
   if (mesDe(ciclo.cierre) < desde) return [];
-  const mesPago = mesDe(ciclo.vencimiento);
   return [
-    { mes: mesDe(ciclo.cierre), cuentaId: cuenta.id, delta: -signo * mov.monto, consumo: -signo * mov.monto },
     {
-      mes: mesPago,
+      mes: mesDe(ciclo.cierre),
       cuentaId: cuenta.id,
-      delta: 0,
-      vence: -signo * mov.monto,
+      delta: -signo * mov.monto,
+      consumo: -signo * mov.monto,
       flujo: { tipo: mov.tipo, categoria, monto: enPesos, certeza, cuota, item },
     },
+    { mes: mesDe(ciclo.vencimiento), cuentaId: cuenta.id, delta: 0, vence: -signo * mov.monto },
   ];
 }
 
 /**
- * Previsión mes a mes, igual que la planilla: ingresos y egresos de cada mes (las compras con
- * tarjeta cuentan el mes en que se paga el resumen) y cómo quedan las cuentas al final de cada mes.
+ * Previsión mes a mes: ingresos y egresos de cada mes (las compras con tarjeta cuentan el mes del cierre
+ * de su resumen) y cómo quedan las cuentas al final de cada mes (la deuda de la tarjeta se paga el mes
+ * siguiente).
  *
  * Los saldos iniciales de las cuentas son los del comienzo de `desde`; los movimientos anteriores
- * se ignoran. El saldo inicial de una tarjeta se toma como el resumen ya cerrado que se paga en `desde`,
- * así que las compras de resúmenes cerrados antes de `desde` no se vuelven a contar.
+ * se ignoran. El saldo inicial de una tarjeta se toma como el resumen ya cerrado que se paga en `desde`:
+ * es gasto de antes, así que no suma egresos, y las compras de resúmenes cerrados antes de `desde` no se
+ * vuelven a contar.
  */
 export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): MesPrevision[] {
   const meses = rangoMeses(opciones.desde, opciones.meses);
@@ -256,19 +278,7 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
 
   for (const c of datos.cuentas) {
     if (c.tarjeta && c.saldoInicial > 0) {
-      efectos.push({
-        mes: opciones.desde,
-        cuentaId: c.id,
-        delta: 0,
-        vence: c.saldoInicial,
-        flujo: {
-            tipo: "egreso",
-            categoria: CATEGORIA_SALDO_TARJETA,
-            monto: c.saldoInicial,
-            certeza: "real",
-          cuota: false,
-        },
-      });
+      efectos.push({ mes: opciones.desde, cuentaId: c.id, delta: 0, vence: c.saldoInicial });
     }
   }
 
@@ -279,7 +289,11 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
       if (mes < p.desde || (p.hasta && mes > p.hasta)) continue;
       const resumen = resumenPresupuesto(p, mes, movimientos, cuentas);
       delMes.push(resumen);
-      if (resumen.resto > 0 && (!opciones.mesActual || mes >= opciones.mesActual)) {
+      const tarjeta = cuentas.get(p.cuentaId)?.tarjeta ? cuentas.get(p.cuentaId) : undefined;
+      const pasado =
+        (opciones.mesActual && mes < opciones.mesActual) ||
+        (opciones.hoy && tarjeta && cicloDe(tarjeta, mes).cierre < opciones.hoy);
+      if (resumen.resto > 0 && !pasado) {
         efectos.push(...efectosDe(restoPresupuesto(p, mes, resumen.resto), cuentas, opciones.desde));
       }
     }
@@ -392,8 +406,8 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
     for (const c of datos.cuentas) {
       const saldo = Math.round(saldos[c.id] * cambioDe(c));
       if (c.tarjeta) deudaTarjetas += saldo;
-      else if (c.disponibilidad === "inmediata") disponible += saldo;
-      else if (c.disponibilidad === "48h") disponible48h += saldo;
+      else if (disponibilidadDe(c) === "inmediata") disponible += saldo;
+      else if (disponibilidadDe(c) === "48h") disponible48h += saldo;
       else reserva += saldo;
     }
 
@@ -456,15 +470,19 @@ function resumenPresupuesto(
         m.categoriaId &&
         categorias.has(m.categoriaId) &&
         (!elegidas || elegidas.has(m.cuentaId)) &&
-        mesDe(m.fecha) === mes,
+        mesDeGasto(m, cuentas) === mes,
     )
     .reduce((total, m) => total + Math.round(m.monto * (cuentas.get(m.cuentaId)?.cambio ?? 1)), 0);
   return { id: p.id, nombre: p.nombre, monto: p.monto, gastado, resto: p.monto - gastado };
 }
 
-/** Lo que resta de un presupuesto en un mes, como un gasto planificado de fin de mes. */
+/**
+ * Lo que resta de un presupuesto en un mes, como un gasto planificado de fin de mes. Si sale de una
+ * tarjeta, va al resumen que cierra ese mes.
+ */
 function restoPresupuesto(p: Presupuesto, mes: Mes, resto: Centavos): Movimiento {
   return {
+    mesResumen: mes,
     id: `${p.id}@${mes}`,
     fecha: fechaEnMes(mes, 28),
     descripcion: p.nombre,

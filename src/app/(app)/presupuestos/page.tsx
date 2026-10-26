@@ -33,7 +33,8 @@ export default async function Presupuestos({ searchParams }: PageProps<"/presupu
         <h1 className="text-2xl font-semibold">Presupuestos</h1>
         <p className={`mt-1 text-sm ${textoSuave}`}>
           Lo que gastás en las categorías de cada presupuesto se descuenta del monto del mes. Lo que resta, la
-          previsión lo cuenta como gasto hasta fin de mes.
+          previsión lo cuenta como gasto hasta fin de mes. Lo comprado con tarjeta cuenta en el mes del período del
+          resumen (si noviembre va del 23/10 al 19/11, una compra del 25/10 es de noviembre).
         </p>
       </div>
 

@@ -25,6 +25,8 @@ interface Props {
   visibleDesde?: Mes;
   /** Mes actual: lo que resta de los presupuestos se prevé desde acá. */
   mesActual?: Mes;
+  /** Fecha de hoy: lo que resta de un presupuesto con tarjeta no se prevé si su resumen ya cerró. */
+  hoy?: string;
   /** Nombre (con emoji) de cada subcategoría, para el detalle de cada categoría. */
   subcategorias?: Record<string, string>;
 }
@@ -36,20 +38,21 @@ export function VistaPrevision({
   meses,
   visibleDesde = desde,
   mesActual,
+  hoy,
   subcategorias = {},
 }: Props) {
   const escenarios = useMemo(() => todos.filter((e) => e.estado === "activo"), [todos]);
   const [seleccionado, setSeleccionado] = useState(BASE);
 
   const previsiones = useMemo(() => {
-    const opciones = { desde, meses, mesActual };
+    const opciones = { desde, meses, mesActual, hoy };
     const visibles = (p: MesPrevision[]) => p.filter((m) => m.mes >= visibleDesde);
     const resultado: Record<string, MesPrevision[]> = { [BASE]: visibles(calcularPrevision(datos, opciones)) };
     for (const e of escenarios) {
       resultado[e.id] = visibles(calcularPrevision(aplicarEscenario(datos, todos, e.id), opciones));
     }
     return resultado;
-  }, [datos, todos, escenarios, desde, meses, visibleDesde, mesActual]);
+  }, [datos, todos, escenarios, desde, meses, visibleDesde, mesActual, hoy]);
 
   const prevision = previsiones[seleccionado];
   const opciones = [{ id: BASE, nombre: "Plan base" }, ...escenarios];
@@ -454,8 +457,9 @@ function Grilla({ prevision, subcategorias }: { prevision: MesPrevision[]; subca
           detalle)
         </span>
         <span>
-          Lo consumido con tarjeta en un mes (↘) se paga el mes siguiente y ahí se cuenta en los egresos. El pago
-          automático usa solo lo que hay en la cuenta de pago; lo que no alcanza queda como vencido sin pagar.
+          Lo comprado con tarjeta es gasto del mes en que cierra su resumen (el período del 23/10 al 19/11 es
+          noviembre); esa deuda (↘) se paga el mes siguiente y baja el disponible ahí. El pago automático usa solo lo
+          que hay en la cuenta de pago; lo que no alcanza queda como vencido sin pagar.
         </span>
       </div>
     </section>

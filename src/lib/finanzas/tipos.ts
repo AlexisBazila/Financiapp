@@ -38,6 +38,8 @@ export interface ConfigTarjeta {
   pagoAutomatico?: boolean;
   /** Cierres y vencimientos reales de cada mes (varían mes a mes). */
   ciclos: CicloTarjeta[];
+  /** Límite de compra que da el banco. */
+  limite?: Centavos;
 }
 
 export interface Cuenta {
