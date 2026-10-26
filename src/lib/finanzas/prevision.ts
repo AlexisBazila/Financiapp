@@ -107,9 +107,17 @@ export interface MesPrevision {
    * solo lo transferido si no se cuenta lo planificado.
    */
   ahorroDelMes: Centavos;
-  /** El resto del mes anterior: lo que sobró sin asignar (positivo) o lo que faltó (negativo). */
+  /**
+   * El resto del mes anterior: lo que sobró sin asignar (positivo) o lo que faltó (negativo). En el primer
+   * mes, la plata disponible para gastar al comienzo del mes.
+   */
   sobranteAnterior: Centavos;
-  /** sobrante anterior + ingresos - egresos - ahorro del mes. Pasa al mes siguiente. */
+  /**
+   * Lo que las tarjetas corren el resto: el consumo del mes (que ya está en egresos) se paga recién el mes
+   * siguiente, y lo que vence en el mes sí sale ahora.
+   */
+  ajusteTarjetas: Centavos;
+  /** sobrante anterior + ingresos - egresos + ajuste de tarjetas - ahorro del mes. Pasa al mes siguiente. */
   resto: Centavos;
 }
 
@@ -197,6 +205,8 @@ interface Efecto {
   consumo?: Centavos;
   /** Transferencia que entra a una tarjeta: un pago del resumen. */
   pago?: Centavos;
+  /** Lo que habría sumado al saldo, pero ya está incluido porque es de antes de la fecha del saldo. */
+  incluido?: Centavos;
   /** Si el efecto es plata que entra o sale del hogar en ese mes, su categoría. Monto en pesos. */
   flujo?: {
     tipo: "ingreso" | "egreso";
@@ -248,6 +258,11 @@ function yaEnElSaldo(mov: Movimiento, cuenta: Cuenta): boolean {
   return !cuenta.tarjeta && cuenta.saldoFecha !== undefined && mov.fecha <= cuenta.saldoFecha;
 }
 
+/** El efecto en el saldo, o nada si ya está incluido en el saldo inicial de la cuenta. */
+function enSaldo(mov: Movimiento, cuenta: Cuenta, delta: Centavos): Pick<Efecto, "delta" | "incluido"> {
+  return yaEnElSaldo(mov, cuenta) ? { delta: 0, incluido: delta } : { delta };
+}
+
 function efectosDe(mov: Movimiento, cuentas: Map<string, Cuenta>, desde: Mes): Efecto[] {
   const cuenta = cuentas.get(mov.cuentaId);
   if (!cuenta) throw new Error(`No existe la cuenta ${mov.cuentaId}`);
@@ -265,14 +280,12 @@ function efectosDe(mov: Movimiento, cuentas: Map<string, Cuenta>, desde: Mes): E
     const signoOrigen = cuenta.tarjeta ? 1 : -1;
     const signoDestino = destino.tarjeta ? -1 : 1;
     return [
-      { mes, cuentaId: cuenta.id, delta: yaEnElSaldo(mov, cuenta) ? 0 : signoOrigen * mov.monto },
+      { mes, cuentaId: cuenta.id, ...enSaldo(mov, cuenta, signoOrigen * mov.monto) },
       {
         mes,
         cuentaId: destino.id,
         // Entre monedas distintas, lo que llega se convierte con los tipos de cambio cargados.
-        delta: yaEnElSaldo(mov, destino)
-          ? 0
-          : signoDestino * Math.round((mov.monto * cambioDe(cuenta)) / cambioDe(destino)),
+        ...enSaldo(mov, destino, signoDestino * Math.round((mov.monto * cambioDe(cuenta)) / cambioDe(destino))),
         ...(destino.tarjeta && !cuenta.tarjeta ? { pago: mov.monto } : {}),
       },
     ];
@@ -284,7 +297,7 @@ function efectosDe(mov: Movimiento, cuentas: Map<string, Cuenta>, desde: Mes): E
       {
         mes: mesDe(mov.fecha),
         cuentaId: cuenta.id,
-        delta: yaEnElSaldo(mov, cuenta) ? 0 : signo * mov.monto,
+        ...enSaldo(mov, cuenta, signo * mov.monto),
         flujo: { tipo: mov.tipo, categoria, monto: enPesos, certeza, cuota, item },
       },
     ];
@@ -378,7 +391,15 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
   const tarjetas = datos.cuentas.filter((c) => c.tarjeta);
   /** Lo vencido y todavía no pagado de cada tarjeta. */
   const vencido: Record<string, Centavos> = Object.fromEntries(tarjetas.map((c) => [c.id, 0]));
-  let restoAnterior = 0;
+  // El primer mes arranca con la plata disponible al comienzo: los saldos iniciales de las cuentas para
+  // gastar, sin lo que ya entró o salió ese mes si el saldo es de un día posterior.
+  const incluido: Record<string, Centavos> = {};
+  for (const e of efectos) {
+    if (e.incluido && porMes.has(e.mes)) incluido[e.cuentaId] = (incluido[e.cuentaId] ?? 0) + e.incluido;
+  }
+  let restoAnterior = datos.cuentas
+    .filter((c) => !c.tarjeta && disponibilidadDe(c) === "inmediata")
+    .reduce((total, c) => total + Math.round((c.saldoInicial - (incluido[c.id] ?? 0)) * cambioDe(c)), 0);
 
   return meses.map((mes) => {
     const ingresosPorCategoria: Record<string, Centavos> = {};
@@ -493,7 +514,9 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
     }
 
     const sobranteAnterior = restoAnterior;
-    restoAnterior = sobranteAnterior + ingresos - egresos - ahorroDelMes;
+    // Las compras con tarjeta se cuentan como gasto el mes del cierre, pero la plata sale cuando vence.
+    const ajusteTarjetas = consumoTarjetas - venceTarjetas;
+    restoAnterior = sobranteAnterior + ingresos - egresos + ajusteTarjetas - ahorroDelMes;
 
     let disponible = 0;
     let disponible48h = 0;
@@ -535,6 +558,7 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
       objetivos,
       ahorroDelMes,
       sobranteAnterior,
+      ajusteTarjetas,
       resto: restoAnterior,
     };
   });
