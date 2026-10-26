@@ -1,5 +1,5 @@
 import type { DatosHogar } from "@/lib/datos/cargar";
-import { mesesEntre } from "@/lib/finanzas/fechas";
+import { hoy, mesesEntre } from "@/lib/finanzas/fechas";
 import { calcularPrevision } from "@/lib/finanzas/prevision";
 import type { Mes, Movimiento } from "@/lib/finanzas/tipos";
 import type { Opciones } from "./formularios";
@@ -15,7 +15,7 @@ export function movimientosDelMes(
 ): { opciones: Opciones; pagosAutomaticos: Movimiento[] } {
   const prevision =
     mes >= hogar.mesInicio
-      ? calcularPrevision(datos, { desde: hogar.mesInicio, meses: mesesEntre(hogar.mesInicio, mes) + 1, mesActual })
+      ? calcularPrevision(datos, { desde: hogar.mesInicio, meses: mesesEntre(hogar.mesInicio, mes) + 1, mesActual, hoy: hoy() })
       : [];
   const delMes = prevision.find((m) => m.mes === mes);
   const nombres = new Map(datos.cuentas.map((c) => [c.id, c.nombre]));

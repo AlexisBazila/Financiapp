@@ -6,7 +6,7 @@ y se pueden aplicar al plan.
 
 ## Estado
 
-Etapa 1 en curso: login, cuentas editables agrupadas por tipo y con titular (con tarjetas y su cierre de cada mes), movimientos, compras en cuotas,
+Etapa 1 en curso: login, cuentas editables agrupadas por tipo y con titular (con tarjetas: cierre y vencimiento de cada mes, límite, deuda total y del período), movimientos, compras en cuotas,
 préstamos, ingresos y gastos recurrentes (con confirmación mensual), categorías con subcategorías, emoji
 y color, movimientos por mes que se confirman y concilian con el banco (con el comercio o la persona
 de cada pago, como figura en el resumen), presupuestos
@@ -38,6 +38,7 @@ npm test        # tests del motor de previsión
   - `tipos.ts`: modelo de datos (montos en centavos enteros).
   - `cuotas.ts`: compras en cuotas y préstamos (francés, alemán o tabla manual).
   - `tarjeta.ts`: a qué resumen entra cada compra según el cierre de cada mes.
+  - `estado-tarjeta.ts`: período de cada resumen, deuda total, deuda del período y disponible del límite.
   - `recurrentes.ts`: ocurrencias mensuales, pendientes hasta confirmarlas.
   - `escenarios.ts`: simulaciones como diferencias sobre el plan base; aplicar y archivar.
   - `prevision.ts`: la grilla mes a mes (ingresos, egresos, disponible, reserva, deuda de tarjetas).

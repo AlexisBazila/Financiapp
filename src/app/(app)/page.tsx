@@ -28,7 +28,8 @@ export default async function Prevision() {
     );
   }
 
-  const mesActual = mesDe(hoy());
+  const fecha = hoy();
+  const mesActual = mesDe(fecha);
   const desde = hogar.mesInicio;
   const visibleDesde = mesActual > desde ? mesActual : desde;
   const meses = mesesEntre(desde, visibleDesde) + MESES_ADELANTE;
@@ -43,6 +44,7 @@ export default async function Prevision() {
         meses={meses}
         visibleDesde={visibleDesde}
         mesActual={mesActual}
+        hoy={fecha}
         subcategorias={subcategorias}
       />
     </>

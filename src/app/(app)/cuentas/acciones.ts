@@ -24,13 +24,14 @@ export async function guardarCuenta(id: string | null, _: Resultado, form: FormD
   if (saldo === null) return { error: "El saldo no es un número válido." };
 
   const esTarjeta = tipo === "tarjeta";
-  const disponibilidad = esTarjeta ? "inmediata" : texto(form, "disponibilidad");
-  if (!DISPONIBILIDADES.includes(disponibilidad)) return { error: "Elegí la disponibilidad." };
-
-  const titular = texto(form, "titular").slice(0, 40) || null;
   // Las tarjetas van en pesos: las compras en dólares se ven en pesos en el resumen.
   const moneda = esTarjeta ? "ARS" : texto(form, "moneda") || "ARS";
   if (!esMoneda(moneda)) return { error: "Elegí la moneda." };
+  // Otra moneda hay que cambiarla para gastarla: no es disponible inmediato ni reserva.
+  const disponibilidad = esTarjeta ? "inmediata" : moneda !== "ARS" ? "48h" : texto(form, "disponibilidad");
+  if (!DISPONIBILIDADES.includes(disponibilidad)) return { error: "Elegí la disponibilidad." };
+
+  const titular = texto(form, "titular").slice(0, 40) || null;
   const fila: Record<string, unknown> = {
     nombre,
     tipo,
@@ -46,6 +47,8 @@ export async function guardarCuenta(id: string | null, _: Resultado, form: FormD
     const diaCierre = entero(form, "dia_cierre");
     const diaVencimiento = entero(form, "dia_vencimiento");
     const cuentaPago = texto(form, "cuenta_pago_id");
+    const limite = pesosACentavos(texto(form, "limite") || "0");
+    if (limite === null || limite < 0) return { error: "El límite no es un número válido." };
     if (!diaCierre || diaCierre > 31 || !diaVencimiento || diaVencimiento > 31) {
       return { error: "Los días de cierre y vencimiento van del 1 al 31." };
     }
@@ -55,6 +58,7 @@ export async function guardarCuenta(id: string | null, _: Resultado, form: FormD
       dia_vencimiento: diaVencimiento,
       cuenta_pago_id: cuentaPago,
       pago_automatico: form.get("pago_automatico") === "on",
+      limite: limite || null,
     });
   }
 
@@ -82,7 +86,15 @@ export async function archivarCuenta(id: string) {
   revalidatePath("/", "layout");
 }
 
-export async function guardarCiclo(cuentaId: string, _: Resultado, form: FormData): Promise<Resultado> {
+/**
+ * Guarda el cierre y el vencimiento del resumen de un mes. Con `mes` null, el mes es el del cierre.
+ */
+export async function guardarCiclo(
+  cuentaId: string,
+  mes: string | null,
+  _: Resultado,
+  form: FormData,
+): Promise<Resultado> {
   const { supabase } = await requerirUsuario();
   const cierre = texto(form, "cierre");
   const vencimiento = texto(form, "vencimiento");
@@ -91,7 +103,7 @@ export async function guardarCiclo(cuentaId: string, _: Resultado, form: FormDat
 
   const { error } = await supabase
     .from("ciclos_tarjeta")
-    .upsert({ cuenta_id: cuentaId, mes: cierre.slice(0, 7), cierre, vencimiento }, { onConflict: "cuenta_id,mes" });
+    .upsert({ cuenta_id: cuentaId, mes: mes ?? cierre.slice(0, 7), cierre, vencimiento }, { onConflict: "cuenta_id,mes" });
   if (error) return { error: `No se pudo guardar: ${error.message}` };
   revalidatePath("/", "layout");
   return { ok: true };
