@@ -7,6 +7,7 @@ import { requerirUsuario } from "@/lib/supabase/servidor";
 import { textoSuave } from "../../estilos";
 import { pesosExactos } from "../../formato";
 import { NuevoMovimiento } from "./formularios";
+import { movimientosDelMes } from "./opciones";
 import { Leyenda, ListaMovimientos, MES, SelectorMes, tituloMes } from "./lista";
 
 export default async function Movimientos({ searchParams }: PageProps<"/movimientos">) {
@@ -15,14 +16,11 @@ export default async function Movimientos({ searchParams }: PageProps<"/movimien
   const mes = typeof pedido === "string" && MES.test(pedido) ? pedido : actual;
 
   const { supabase } = await requerirUsuario();
-  const { datos, cuentasActivas, categorias, contrapartes } = await cargarHogar(supabase);
-  const opciones = {
-    cuentas: datos.cuentas.filter((c) => cuentasActivas.includes(c.id)).map((c) => ({ id: c.id, nombre: c.nombre })),
-    categorias: categorias.filter((c) => !c.archivada),
-    contrapartes,
-  };
+  const hogar = await cargarHogar(supabase);
+  const { datos, categorias } = hogar;
+  const { opciones, pagosAutomaticos } = movimientosDelMes(hogar, mes, actual);
 
-  const lista = expandir(datos, mes, mes)
+  const lista = [...expandir(datos, mes, mes), ...pagosAutomaticos]
     .filter((m) => mesDe(m.fecha) === mes)
     .sort((a, b) => b.fecha.localeCompare(a.fecha) || a.descripcion.localeCompare(b.descripcion));
   const suma = (tipo: Movimiento["tipo"]) => lista.filter((m) => m.tipo === tipo).reduce((s, m) => s + m.monto, 0);

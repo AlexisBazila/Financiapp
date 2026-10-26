@@ -1,5 +1,5 @@
 import { generarCuotasPlan, generarCuotasPrestamo } from "./cuotas";
-import { fechaEnMes, mesDe, rangoMeses } from "./fechas";
+import { fechaEnMes, mesDe, rangoMeses, sumarMeses } from "./fechas";
 import { instanciarRecurrente } from "./recurrentes";
 import { cicloDe, resumenDeFecha } from "./tarjeta";
 import type { Centavos, Cuenta, Datos, Estado, Mes, Movimiento, Presupuesto } from "./tipos";
@@ -26,6 +26,15 @@ export interface MesPresupuesto {
   resto: Centavos;
 }
 
+export interface PagoTarjeta {
+  tarjetaId: string;
+  /** Cuenta de la que sale. */
+  cuentaId: string;
+  monto: Centavos;
+  /** Fecha del vencimiento del resumen que se paga. */
+  fecha: string;
+}
+
 export interface MesPrevision {
   mes: Mes;
   ingresos: Centavos;
@@ -46,6 +55,12 @@ export interface MesPrevision {
   reserva: Centavos;
   /** Resúmenes cerrados todavía no pagados más lo consumido en el ciclo abierto. */
   deudaTarjetas: Centavos;
+  /** Lo que vence en el mes (más lo que quedó sin pagar antes), por tarjeta, antes de pagar. */
+  vencidoTarjetas: Record<string, Centavos>;
+  /** Pagos automáticos de resumen que prevé la previsión en el mes. */
+  pagosTarjeta: PagoTarjeta[];
+  /** Lo vencido que quedó sin pagar al cierre del mes, sumando todas las tarjetas. */
+  impagoTarjetas: Centavos;
   /** Ocurrencias de recurrentes que esperan confirmación en este mes. */
   pendientes: number;
   /** Cuotas de compras y préstamos que se pagan este mes. */
@@ -108,6 +123,10 @@ interface Efecto {
   cuentaId: string;
   /** Lo que suma (o resta) al saldo de la cuenta; en tarjetas, a la deuda. */
   delta: Centavos;
+  /** En tarjetas: lo que vence este mes y hay que pagar (negativo si es una devolución). */
+  vence?: Centavos;
+  /** Transferencia que entra a una tarjeta: un pago del resumen. */
+  pago?: Centavos;
   /** Si el efecto es plata que entra o sale del hogar en ese mes, su categoría. */
   flujo?: { tipo: "ingreso" | "egreso"; categoria: string; monto: Centavos; certeza: Certeza; cuota: boolean };
 }
@@ -135,7 +154,12 @@ function efectosDe(mov: Movimiento, cuentas: Map<string, Cuenta>, desde: Mes): E
     const signoDestino = destino.tarjeta ? -1 : 1;
     return [
       { mes, cuentaId: cuenta.id, delta: signoOrigen * mov.monto },
-      { mes, cuentaId: destino.id, delta: signoDestino * mov.monto },
+      {
+        mes,
+        cuentaId: destino.id,
+        delta: signoDestino * mov.monto,
+        ...(destino.tarjeta && !cuenta.tarjeta ? { pago: mov.monto } : {}),
+      },
     ];
   }
 
@@ -151,18 +175,19 @@ function efectosDe(mov: Movimiento, cuentas: Map<string, Cuenta>, desde: Mes): E
     ];
   }
 
-  // Tarjeta: la deuda sube al cierre del resumen y la plata sale al vencimiento.
+  // Tarjeta: la deuda sube al cierre del resumen y vence al vencimiento. El gasto se cuenta el mes del
+  // vencimiento, como en la planilla; la plata sale con el pago del resumen (ver calcularPrevision).
   const ciclo = cicloDe(cuenta, mov.mesResumen ?? resumenDeFecha(cuenta, mov.fecha));
   // Un resumen que cerró antes de `desde` ya está incluido en el saldo inicial de la tarjeta.
   if (mesDe(ciclo.cierre) < desde) return [];
   const mesPago = mesDe(ciclo.vencimiento);
   return [
     { mes: mesDe(ciclo.cierre), cuentaId: cuenta.id, delta: -signo * mov.monto },
-    { mes: mesPago, cuentaId: cuenta.id, delta: signo * mov.monto },
     {
       mes: mesPago,
-      cuentaId: cuenta.tarjeta.cuentaPagoId,
-      delta: signo * mov.monto,
+      cuentaId: cuenta.id,
+      delta: 0,
+      vence: -signo * mov.monto,
       flujo: { tipo: mov.tipo, categoria, monto: mov.monto, certeza, cuota },
     },
   ];
@@ -188,21 +213,19 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
 
   for (const c of datos.cuentas) {
     if (c.tarjeta && c.saldoInicial > 0) {
-      efectos.push(
-        { mes: opciones.desde, cuentaId: c.id, delta: -c.saldoInicial },
-        {
-          mes: opciones.desde,
-          cuentaId: c.tarjeta.cuentaPagoId,
-          delta: -c.saldoInicial,
-          flujo: {
+      efectos.push({
+        mes: opciones.desde,
+        cuentaId: c.id,
+        delta: 0,
+        vence: c.saldoInicial,
+        flujo: {
             tipo: "egreso",
             categoria: CATEGORIA_SALDO_TARJETA,
             monto: c.saldoInicial,
             certeza: "real",
-            cuota: false,
-          },
+          cuota: false,
         },
-      );
+      });
     }
   }
 
@@ -243,6 +266,9 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
     [...cuotasPorMes].reduce((total, [m, monto]) => (m > mes ? total + monto : total), 0);
 
   const saldos: Record<string, Centavos> = Object.fromEntries(datos.cuentas.map((c) => [c.id, c.saldoInicial]));
+  const tarjetas = datos.cuentas.filter((c) => c.tarjeta);
+  /** Lo vencido y todavía no pagado de cada tarjeta. */
+  const vencido: Record<string, Centavos> = Object.fromEntries(tarjetas.map((c) => [c.id, 0]));
 
   return meses.map((mes) => {
     const ingresosPorCategoria: Record<string, Centavos> = {};
@@ -251,8 +277,14 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
     let ingresos = 0;
     let egresos = 0;
 
+    const pagadoAMano = new Set<string>();
     for (const e of porMes.get(mes) ?? []) {
       saldos[e.cuentaId] += e.delta;
+      if (e.vence) vencido[e.cuentaId] += e.vence;
+      if (e.pago) {
+        vencido[e.cuentaId] -= e.pago;
+        pagadoAMano.add(e.cuentaId);
+      }
       if (!e.flujo) continue;
       const clave = `${e.flujo.tipo}:${e.flujo.categoria}`;
       const previa = celdas[clave];
@@ -268,6 +300,28 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
         egresos += e.flujo.monto;
         egresosPorCategoria[e.flujo.categoria] = (egresosPorCategoria[e.flujo.categoria] ?? 0) + e.flujo.monto;
       }
+    }
+
+    // Pago automático de lo vencido, hasta el saldo positivo de la cuenta de pago. Si en el mes se cargó
+    // un pago a mano, ese reemplaza al automático.
+    const vencidoTarjetas: Record<string, Centavos> = {};
+    const pagosTarjeta: PagoTarjeta[] = [];
+    let impagoTarjetas = 0;
+    for (const t of tarjetas) {
+      const config = t.tarjeta!;
+      if (vencido[t.id] > 0) vencidoTarjetas[t.id] = vencido[t.id];
+      if (config.pagoAutomatico !== false && !pagadoAMano.has(t.id) && vencido[t.id] > 0) {
+        const monto = Math.min(vencido[t.id], Math.max(0, saldos[config.cuentaPagoId]));
+        if (monto > 0) {
+          saldos[config.cuentaPagoId] -= monto;
+          saldos[t.id] -= monto;
+          vencido[t.id] -= monto;
+          pagosTarjeta.push({ tarjetaId: t.id, cuentaId: config.cuentaPagoId, monto, fecha: vencimientoEn(t, mes) });
+        }
+      }
+      // Lo pagado de más baja la deuda, pero no adelanta lo que vence después.
+      if (vencido[t.id] < 0) vencido[t.id] = 0;
+      impagoTarjetas += vencido[t.id];
     }
 
     let disponible = 0;
@@ -295,6 +349,9 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
       disponible48h,
       reserva,
       deudaTarjetas,
+      vencidoTarjetas,
+      pagosTarjeta,
+      impagoTarjetas,
       pendientes: pendientesPorMes.get(mes) ?? 0,
       cuotasDelMes: cuotasPorMes.get(mes) ?? 0,
       deudaCuotas: cuotasDespuesDe(mes),
@@ -303,6 +360,15 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
   });
 }
 
+
+/** Fecha de vencimiento de la tarjeta que cae en `mes` (la del resumen del mes anterior, en general). */
+function vencimientoEn(tarjeta: Cuenta, mes: Mes): string {
+  for (const resumen of [sumarMeses(mes, -1), mes, sumarMeses(mes, -2)]) {
+    const { vencimiento } = cicloDe(tarjeta, resumen);
+    if (mesDe(vencimiento) === mes) return vencimiento;
+  }
+  return fechaEnMes(mes, tarjeta.tarjeta!.diaVencimiento);
+}
 
 /** Etiqueta con la que lo que resta de un presupuesto aparece en los egresos de la previsión. */
 export function categoriaResto(p: Pick<Presupuesto, "icono" | "nombre">): string {

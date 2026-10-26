@@ -28,7 +28,10 @@ function mensaje(error: { code?: string; message: string }): string {
 
 export async function guardarMovimiento(base: Base | null, _: Resultado, form: FormData): Promise<Resultado> {
   const { supabase } = await requerirUsuario();
-  const tipo = texto(form, "tipo");
+  const tipoElegido = texto(form, "tipo");
+  // Un pago de tarjeta se guarda como transferencia de una cuenta a la tarjeta.
+  const pagoDeTarjeta = tipoElegido === "pago_tarjeta";
+  const tipo = pagoDeTarjeta ? "transferencia" : tipoElegido;
   const fecha = texto(form, "fecha");
   const monto = pesosACentavos(texto(form, "monto"));
   const cuentaId = texto(form, "cuenta_id");
@@ -43,6 +46,12 @@ export async function guardarMovimiento(base: Base | null, _: Resultado, form: F
     return { error: "Elegí una cuenta destino distinta de la de origen." };
   }
   if (!["real", "planificado"].includes(estado)) return { error: "Elegí si ya pasó o es planificado." };
+  if (pagoDeTarjeta) {
+    const { data } = await supabase.from("cuentas").select("id, tipo").in("id", [cuentaId, destinoId]);
+    const tipoDe = (id: string) => data?.find((c) => c.id === id)?.tipo;
+    if (tipoDe(destinoId) !== "tarjeta") return { error: "Elegí la tarjeta que pagás." };
+    if (tipoDe(cuentaId) === "tarjeta") return { error: "Elegí la cuenta desde la que pagás." };
+  }
   const categoria =
     tipo === "transferencia"
       ? { categoria_id: null, categoria: null }
@@ -56,7 +65,7 @@ export async function guardarMovimiento(base: Base | null, _: Resultado, form: F
     cuenta_id: cuentaId,
     cuenta_destino_id: tipo === "transferencia" ? destinoId : null,
     ...categoria,
-    descripcion: texto(form, "descripcion"),
+    descripcion: texto(form, "descripcion") || (pagoDeTarjeta ? "Pago de tarjeta" : ""),
     contraparte: tipo === "transferencia" ? null : texto(form, "contraparte").slice(0, 80) || null,
     estado,
     // Lo que no pasó todavía no puede estar conciliado.

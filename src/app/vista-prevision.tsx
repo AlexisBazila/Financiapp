@@ -86,6 +86,9 @@ function Resumen({ mes }: { mes: MesPrevision }) {
         {mes.pendientes > 0 && (
           <span className="text-amber-600"> · {mes.pendientes} movimientos por confirmar (montos estimados)</span>
         )}
+        {mes.impagoTarjetas > 0 && (
+          <span className="text-red-600"> · $ {pesos(mes.impagoTarjetas)} de tarjeta vencido sin pagar</span>
+        )}
       </h2>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         {tarjetas.map((t) => (
@@ -265,6 +268,12 @@ function Grilla({ prevision }: { prevision: MesPrevision[] }) {
               "Deuda tarjetas",
               prevision.map((m) => m.deudaTarjetas),
             )}
+            {prevision.some((m) => m.impagoTarjetas > 0) &&
+              fila(
+                "· vencido sin pagar",
+                prevision.map((m) => m.impagoTarjetas),
+                "text-red-600",
+              )}
             {fila(
               "Deuda en cuotas",
               prevision.map((m) => m.deudaCuotas),
@@ -288,7 +297,10 @@ function Grilla({ prevision }: { prevision: MesPrevision[] }) {
         <span>
           <span className={`${MARCA_CUOTAS} px-1.5`}>123</span> incluye cuotas
         </span>
-        <span>Las compras con tarjeta cuentan el mes en que se paga el resumen.</span>
+        <span>
+          Las compras con tarjeta cuentan el mes en que vence el resumen. El pago automático usa solo lo que hay en
+          la cuenta de pago; lo que no alcanza queda como deuda vencida.
+        </span>
       </div>
     </section>
   );

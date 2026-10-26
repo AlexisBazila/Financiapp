@@ -207,6 +207,8 @@ function Fila({
   const ruta = m.categoriaId ? rutaCategoria(categorias, m.categoriaId) : m.categoria;
   const puntoColor = m.categoriaId ? categorias.get(m.categoriaId)?.color : undefined;
   const cuota = m.origen.tipo === "cuotas" || m.origen.tipo === "prestamo" ? m.origen : undefined;
+  const pagoDeTarjeta =
+    m.tipo === "transferencia" && opciones.cuentas.some((c) => c.tarjeta && c.id === m.cuentaDestinoId);
 
   return (
     <li
@@ -230,6 +232,11 @@ function Fila({
         {cuota && (
           <Chip clase={CHIP_CUOTA}>
             {cuota.tipo === "prestamo" ? "Préstamo" : "Cuota"} {cuota.numero}/{cuota.total}
+          </Chip>
+        )}
+        {pagoDeTarjeta && (
+          <Chip clase="bg-sky-100 text-sky-800 dark:bg-sky-500/20 dark:text-sky-300">
+            💳 Pago de tarjeta{guardado ? "" : " · automático"}
           </Chip>
         )}
         {m.origen.tipo === "recurrente" && (

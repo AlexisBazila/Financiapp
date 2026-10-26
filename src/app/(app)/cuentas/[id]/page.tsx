@@ -8,6 +8,7 @@ import { caja, textoSuave } from "../../../estilos";
 import { pesosExactos } from "../../../formato";
 import { NuevoMovimiento } from "../../movimientos/formularios";
 import { Leyenda, ListaMovimientos, MES, SelectorMes, tituloMes } from "../../movimientos/lista";
+import { movimientosDelMes } from "../../movimientos/opciones";
 
 export default async function Cuenta({ params, searchParams }: PageProps<"/cuentas/[id]">) {
   const [{ id }, { mes: pedido }] = await Promise.all([params, searchParams]);
@@ -15,16 +16,13 @@ export default async function Cuenta({ params, searchParams }: PageProps<"/cuent
   const mes = typeof pedido === "string" && MES.test(pedido) ? pedido : actual;
 
   const { supabase } = await requerirUsuario();
-  const { hogar, datos, cuentasActivas, categorias, contrapartes } = await cargarHogar(supabase);
+  const datosHogar = await cargarHogar(supabase);
+  const { hogar, datos, categorias } = datosHogar;
   const cuenta = datos.cuentas.find((c) => c.id === id);
   if (!cuenta) notFound();
 
-  const opciones = {
-    cuentas: datos.cuentas.filter((c) => cuentasActivas.includes(c.id)).map((c) => ({ id: c.id, nombre: c.nombre })),
-    categorias: categorias.filter((c) => !c.archivada),
-    contrapartes,
-  };
-  const lista = expandir(datos, mes, mes)
+  const { opciones, pagosAutomaticos } = movimientosDelMes(datosHogar, mes, actual);
+  const lista = [...expandir(datos, mes, mes), ...pagosAutomaticos]
     .filter((m) => (m.cuentaId === id || m.cuentaDestinoId === id) && mesDe(m.fecha) === mes)
     .sort((a, b) => b.fecha.localeCompare(a.fecha) || a.descripcion.localeCompare(b.descripcion));
 

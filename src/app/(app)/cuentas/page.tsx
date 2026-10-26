@@ -62,7 +62,9 @@ export default async function Cuentas() {
                     </div>
                     <div className={`text-sm ${textoSuave}`}>
                       {c.tarjeta
-                        ? `Cierra el ${c.tarjeta.diaCierre}, vence el ${c.tarjeta.diaVencimiento}`
+                        ? `Cierra el ${c.tarjeta.diaCierre}, vence el ${c.tarjeta.diaVencimiento} · ${
+                            c.tarjeta.pagoAutomatico === false ? "pago a mano" : "pago automático"
+                          }`
                         : DISPONIBILIDAD[c.disponibilidad]}
                     </div>
                   </div>
