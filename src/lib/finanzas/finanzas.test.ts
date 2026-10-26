@@ -149,6 +149,17 @@ describe("previsión", () => {
     origen: { tipo: "manual" },
   });
 
+  it("lo consumido con tarjeta en un mes es la deuda del mes siguiente", () => {
+    const datos = vacio();
+    datos.cuentas = [{ ...banco, saldoInicial: 500_000_00 }, ahorro, { ...visa, saldoInicial: 80_000_00 }];
+    datos.movimientos.push(compraVisa(100_000_00)); // cierra el 20/11, vence el 2/12
+    const [nov, dic] = calcularPrevision(datos, { desde: "2026-11", meses: 2 });
+    expect(nov.consumoTarjetas).toBe(100_000_00);
+    expect(nov.venceTarjetas).toBe(80_000_00);
+    expect(dic.consumoTarjetas).toBe(0);
+    expect(dic.venceTarjetas).toBe(100_000_00);
+  });
+
   it("el pago automático no deja en negativo la cuenta: lo que falta queda como deuda y se paga después", () => {
     const datos = vacio();
     datos.cuentas = [{ ...banco, saldoInicial: 60_000_00 }, ahorro, visa];

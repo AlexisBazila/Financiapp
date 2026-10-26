@@ -55,6 +55,10 @@ export interface MesPrevision {
   reserva: Centavos;
   /** Resúmenes cerrados todavía no pagados más lo consumido en el ciclo abierto. */
   deudaTarjetas: Centavos;
+  /** Compras con tarjeta de los resúmenes que cierran este mes: la deuda que se paga el mes siguiente. */
+  consumoTarjetas: Centavos;
+  /** Resúmenes que vencen este mes (lo consumido el mes anterior), sin lo que quedó sin pagar antes. */
+  venceTarjetas: Centavos;
   /** Lo que vence en el mes (más lo que quedó sin pagar antes), por tarjeta, antes de pagar. */
   vencidoTarjetas: Record<string, Centavos>;
   /** Pagos automáticos de resumen que prevé la previsión en el mes. */
@@ -125,6 +129,8 @@ interface Efecto {
   delta: Centavos;
   /** En tarjetas: lo que vence este mes y hay que pagar (negativo si es una devolución). */
   vence?: Centavos;
+  /** En tarjetas: lo que se suma al resumen que cierra este mes (negativo si es una devolución). */
+  consumo?: Centavos;
   /** Transferencia que entra a una tarjeta: un pago del resumen. */
   pago?: Centavos;
   /** Si el efecto es plata que entra o sale del hogar en ese mes, su categoría. */
@@ -182,7 +188,7 @@ function efectosDe(mov: Movimiento, cuentas: Map<string, Cuenta>, desde: Mes): E
   if (mesDe(ciclo.cierre) < desde) return [];
   const mesPago = mesDe(ciclo.vencimiento);
   return [
-    { mes: mesDe(ciclo.cierre), cuentaId: cuenta.id, delta: -signo * mov.monto },
+    { mes: mesDe(ciclo.cierre), cuentaId: cuenta.id, delta: -signo * mov.monto, consumo: -signo * mov.monto },
     {
       mes: mesPago,
       cuentaId: cuenta.id,
@@ -278,9 +284,15 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
     let egresos = 0;
 
     const pagadoAMano = new Set<string>();
+    let consumoTarjetas = 0;
+    let venceTarjetas = 0;
     for (const e of porMes.get(mes) ?? []) {
       saldos[e.cuentaId] += e.delta;
-      if (e.vence) vencido[e.cuentaId] += e.vence;
+      if (e.consumo) consumoTarjetas += e.consumo;
+      if (e.vence) {
+        vencido[e.cuentaId] += e.vence;
+        venceTarjetas += e.vence;
+      }
       if (e.pago) {
         vencido[e.cuentaId] -= e.pago;
         pagadoAMano.add(e.cuentaId);
@@ -349,6 +361,8 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
       disponible48h,
       reserva,
       deudaTarjetas,
+      consumoTarjetas,
+      venceTarjetas,
       vencidoTarjetas,
       pagosTarjeta,
       impagoTarjetas,
