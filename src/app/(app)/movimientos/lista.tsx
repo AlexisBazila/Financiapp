@@ -239,6 +239,9 @@ function Fila({
             💳 Pago de tarjeta{guardado ? "" : " · automático"}
           </Chip>
         )}
+        {m.id.startsWith("ahorro:") && (
+          <Chip clase="bg-sky-100 text-sky-800 dark:bg-sky-500/20 dark:text-sky-300">Objetivo de ahorro · falta</Chip>
+        )}
         {m.origen.tipo === "recurrente" && (
           <Chip clase="bg-sky-100 text-sky-800 dark:bg-sky-500/20 dark:text-sky-300">Recurrente</Chip>
         )}

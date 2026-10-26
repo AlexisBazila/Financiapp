@@ -5,14 +5,15 @@ import type { Mes, Movimiento } from "@/lib/finanzas/tipos";
 import type { Opciones } from "./formularios";
 
 /**
- * Opciones de los formularios de movimientos y los pagos automáticos de tarjeta que prevé la previsión
- * en `mes`, como movimientos planificados que se pueden confirmar o editar.
+ * Opciones de los formularios de movimientos, y los pagos automáticos de tarjeta y lo que falta de los
+ * objetivos de ahorro que prevé la previsión en `mes`, como movimientos planificados que se pueden
+ * confirmar o editar.
  */
 export function movimientosDelMes(
   { hogar, datos, cuentasActivas, categorias, contrapartes }: DatosHogar,
   mes: Mes,
   mesActual: Mes,
-): { opciones: Opciones; pagosAutomaticos: Movimiento[] } {
+): { opciones: Opciones; pagosAutomaticos: Movimiento[]; ahorrosPrevistos: Movimiento[] } {
   const prevision =
     mes >= hogar.mesInicio
       ? calcularPrevision(datos, { desde: hogar.mesInicio, meses: mesesEntre(hogar.mesInicio, mes) + 1, mesActual, hoy: hoy() })
@@ -40,5 +41,18 @@ export function movimientosDelMes(
       estado: "planificado",
       origen: { tipo: "manual" },
     })),
+    ahorrosPrevistos: (delMes?.objetivos ?? [])
+      .filter((o) => o.previsto > 0)
+      .map((o) => ({
+        id: `ahorro:${o.id}@${mes}`,
+        fecha: o.fecha,
+        descripcion: `${o.icono ? `${o.icono} ` : ""}${o.nombre}`,
+        tipo: "transferencia",
+        monto: o.previsto,
+        cuentaId: o.cuentaOrigenId,
+        cuentaDestinoId: o.cuentaDestinoId,
+        estado: "planificado",
+        origen: { tipo: "manual" },
+      })),
   };
 }

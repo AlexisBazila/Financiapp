@@ -15,6 +15,14 @@ import { pesos } from "./formato";
 
 const BASE = "base";
 
+/** Qué muestra la grilla: todo lo previsto, solo lo confirmado, o lo confirmado contra lo previsto. */
+type Vista = "plan" | "real" | "comparar";
+const VISTAS: { id: Vista; nombre: string }[] = [
+  { id: "plan", nombre: "Planificado" },
+  { id: "real", nombre: "Real" },
+  { id: "comparar", nombre: "Real vs planificado" },
+];
+
 interface Props {
   datos: Datos;
   escenarios: Escenario[];
@@ -43,6 +51,7 @@ export function VistaPrevision({
 }: Props) {
   const escenarios = useMemo(() => todos.filter((e) => e.estado === "activo"), [todos]);
   const [seleccionado, setSeleccionado] = useState(BASE);
+  const [vista, setVista] = useState<Vista>("plan");
 
   const previsiones = useMemo(() => {
     const opciones = { desde, meses, mesActual, hoy };
@@ -53,6 +62,12 @@ export function VistaPrevision({
     }
     return resultado;
   }, [datos, todos, escenarios, desde, meses, visibleDesde, mesActual, hoy]);
+  // Solo lo confirmado: sin lo planificado, lo pendiente, lo que resta de presupuestos y objetivos ni
+  // pagos automáticos. Es igual en todos los escenarios, que solo cambian lo planificado.
+  const real = useMemo(
+    () => calcularPrevision(datos, { desde, meses, mesActual, hoy, estados: ["real"] }).filter((m) => m.mes >= visibleDesde),
+    [datos, desde, meses, visibleDesde, mesActual, hoy],
+  );
 
   const prevision = previsiones[seleccionado];
   const opciones = [{ id: BASE, nombre: "Plan base" }, ...escenarios];
@@ -79,30 +94,64 @@ export function VistaPrevision({
         </div>
       )}
 
-      <Resumen mes={prevision[0]} />
-      <Grilla prevision={prevision} subcategorias={subcategorias} />
+      <Resumen mes={prevision[0]} real={real[0]} />
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Qué ver">
+          {VISTAS.map((v) => (
+            <button
+              key={v.id}
+              role="tab"
+              aria-selected={v.id === vista}
+              onClick={() => setVista(v.id)}
+              className={`rounded-lg border px-3 py-1.5 text-sm transition-colors ${
+                v.id === vista
+                  ? "border-sky-600 bg-sky-600 text-white"
+                  : "border-black/15 hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
+              }`}
+            >
+              {v.nombre}
+            </button>
+          ))}
+          <span className="text-xs text-black/60 dark:text-white/60">
+            {vista === "plan"
+              ? "Todo lo previsto: lo confirmado más ingresos y gastos programados, cuotas, presupuestos y objetivos de ahorro."
+              : vista === "real"
+                ? "Solo lo confirmado y conciliado: cómo están y estuvieron las cuentas de verdad."
+                : "Arriba lo real, abajo lo planificado: cómo va cada mes contra el plan."}
+          </span>
+        </div>
+        <Grilla
+          prevision={
+            vista === "plan" ? prevision : vista === "real" ? real.filter((m) => !mesActual || m.mes <= mesActual) : real
+          }
+          plan={vista === "comparar" ? prevision : undefined}
+          mesActual={mesActual}
+          subcategorias={subcategorias}
+        />
+      </div>
       {escenarios.length > 0 && <Comparacion previsiones={previsiones} opciones={opciones} />}
     </div>
   );
 }
 
-function Resumen({ mes }: { mes: MesPrevision }) {
-  // Las deudas se muestran en negativo, para leerlas igual que los saldos.
+function Resumen({ mes, real }: { mes: MesPrevision; real: MesPrevision }) {
+  // Las deudas se muestran en negativo, para leerlas igual que los saldos. Arriba lo real (lo que hay en
+  // las cuentas con lo confirmado) y abajo cómo queda al cierre del mes con lo planificado.
   const tarjetas = [
-    { titulo: "Disponible", valor: mes.disponible, nota: "para gastar ya" },
-    { titulo: "No inmediato", valor: mes.disponible48h, nota: "FCI, dólares, plazo fijo" },
-    { titulo: "Reserva", valor: mes.reserva, nota: "ahorro apartado" },
-    { titulo: "Deuda tarjetas", valor: -mes.deudaTarjetas, nota: "resúmenes por pagar" },
+    { titulo: "Disponible", valor: (m: MesPrevision) => m.disponible, nota: "para gastar ya" },
+    { titulo: "No inmediato", valor: (m: MesPrevision) => m.disponible48h, nota: "FCI, dólares, plazo fijo" },
+    { titulo: "Reserva", valor: (m: MesPrevision) => m.reserva, nota: "ahorro apartado" },
+    { titulo: "Deuda tarjetas", valor: (m: MesPrevision) => -m.deudaTarjetas, nota: "resúmenes por pagar" },
     {
       titulo: "Deuda en cuotas",
-      valor: -mes.deudaCuotas,
-      nota: `al cierre · $ ${pesos(mes.cuotasDelMes)} se pagan este mes`,
+      valor: (m: MesPrevision) => -m.deudaCuotas,
+      nota: `$ ${pesos(mes.cuotasDelMes)} se pagan este mes`,
     },
   ];
   return (
     <section>
       <h2 className="mb-3 text-sm text-black/60 dark:text-white/60">
-        Al cierre de {nombreMes(mes.mes)}
+        Real hoy y planificado al cierre de {nombreMes(mes.mes)}
         {mes.pendientes > 0 && (
           <span className="text-amber-600"> · {mes.pendientes} movimientos por confirmar (montos estimados)</span>
         )}
@@ -111,19 +160,34 @@ function Resumen({ mes }: { mes: MesPrevision }) {
         )}
       </h2>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        {tarjetas.map((t) => (
-          <div key={t.titulo} className="rounded-xl border border-black/10 p-4 dark:border-white/15">
-            <div className="text-sm text-black/60 dark:text-white/60">{t.titulo}</div>
-            <div
-              className={`mt-1 text-xl font-semibold tabular-nums ${
-                t.valor < 0 ? "text-red-600 dark:text-red-400" : t.valor > 0 ? "text-green-700 dark:text-green-400" : ""
-              }`}
-            >
-              {conSigno(t.valor)}
+        {tarjetas.map((t) => {
+          const hoy = t.valor(real);
+          const plan = t.valor(mes);
+          const cambio = plan - hoy;
+          return (
+            <div key={t.titulo} className="rounded-xl border border-black/10 p-4 dark:border-white/15">
+              <div className="text-sm text-black/60 dark:text-white/60">{t.titulo}</div>
+              <div
+                className={`mt-1 text-xl font-semibold tabular-nums ${
+                  hoy < 0 ? "text-red-600 dark:text-red-400" : hoy > 0 ? "text-green-700 dark:text-green-400" : ""
+                }`}
+                title="Real: con lo confirmado"
+              >
+                {conSigno(hoy)}
+              </div>
+              <div className="mt-1 text-sm tabular-nums text-sky-700 dark:text-sky-400" title="Planificado al cierre del mes">
+                plan {conSigno(plan)}
+                {cambio !== 0 && (
+                  <span className="ml-1 text-xs">
+                    ({cambio > 0 ? "+" : "−"}
+                    {pesos(Math.abs(cambio))})
+                  </span>
+                )}
+              </div>
+              <div className="text-xs text-black/50 dark:text-white/50">{t.nota}</div>
             </div>
-            <div className="text-xs text-black/50 dark:text-white/50">{t.nota}</div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </section>
   );
@@ -157,7 +221,20 @@ const MARCA_CUOTAS = "rounded ring-1 ring-inset ring-violet-400/70 dark:ring-vio
 
 const MARCA_CUOTA_DETALLE = "rounded ring-1 ring-inset ring-amber-400";
 
-function Grilla({ prevision, subcategorias }: { prevision: MesPrevision[]; subcategorias: Record<string, string> }) {
+function Grilla({
+  prevision,
+  plan,
+  mesActual,
+  subcategorias,
+}: {
+  prevision: MesPrevision[];
+  /** Para comparar: lo planificado de cada mes, que se muestra debajo de lo de `prevision`. */
+  plan?: MesPrevision[];
+  /** Al comparar, los meses posteriores no tienen nada real todavía: solo se muestra lo planificado. */
+  mesActual?: Mes;
+  subcategorias: Record<string, string>;
+}) {
+  const sinReal = (m: MesPrevision) => Boolean(plan && mesActual && m.mes > mesActual);
   const [abiertas, setAbiertas] = useState<Set<string>>(new Set());
   const alternar = (clave: string) =>
     setAbiertas((actual) => {
@@ -166,10 +243,22 @@ function Grilla({ prevision, subcategorias }: { prevision: MesPrevision[]; subca
       else nuevo.add(clave);
       return nuevo;
     });
-  const ingresos = categorias(prevision, "ingresosPorCategoria");
-  const egresos = categorias(prevision, "egresosPorCategoria");
+  const ingresos = categorias(plan ?? prevision, "ingresosPorCategoria");
+  const egresos = categorias(plan ?? prevision, "egresosPorCategoria");
+  /** Al comparar, lo planificado del mes `i` debajo del valor. */
+  const debajo = (valor: (m: MesPrevision) => number, i: number) =>
+    plan && (
+      <div className="text-[11px] font-normal text-sky-700/80 dark:text-sky-400/80" title="Planificado">
+        {valor(plan[i]) === 0 ? "–" : pesos(valor(plan[i]))}
+      </div>
+    );
   const presupuestos = [
-    ...new Map(prevision.flatMap((m) => m.presupuestos).map((p) => [p.id, p.nombre])),
+    ...new Map((plan ?? prevision).flatMap((m) => m.presupuestos).map((p) => [p.id, p.nombre])),
+  ];
+  const objetivos = [
+    ...new Map(
+      (plan ?? prevision).flatMap((m) => m.objetivos).map((o) => [o.id, `${o.icono ? `${o.icono} ` : ""}${o.nombre}`]),
+    ),
   ];
 
   const celda = "px-3 py-1.5 text-right tabular-nums whitespace-nowrap";
@@ -177,7 +266,7 @@ function Grilla({ prevision, subcategorias }: { prevision: MesPrevision[]; subca
 
   const fila = (
     titulo: string,
-    valores: number[],
+    valor: (m: MesPrevision) => number,
     clase = "",
     tono?: (v: number, i: number) => string,
   ) => (
@@ -185,11 +274,15 @@ function Grilla({ prevision, subcategorias }: { prevision: MesPrevision[]; subca
       <th scope="row" className={`${primera} font-normal`}>
         {titulo}
       </th>
-      {valores.map((v, i) => (
-        <td key={i} className={`${celda} ${tono ? tono(v, i) : v < 0 ? "text-red-600" : ""}`}>
-          {v === 0 ? "–" : pesos(v)}
-        </td>
-      ))}
+      {prevision.map((m, i) => {
+        const v = valor(m);
+        return (
+          <td key={m.mes} className={`${celda} ${tono ? tono(v, i) : v < 0 ? "text-red-600" : ""}`}>
+            {sinReal(m) ? "" : v === 0 ? "–" : pesos(v)}
+            {debajo(valor, i)}
+          </td>
+        );
+      })}
     </tr>
   );
   const filaCategoria = (tipo: "ingreso" | "egreso", c: string) => {
@@ -215,12 +308,15 @@ function Grilla({ prevision, subcategorias }: { prevision: MesPrevision[]; subca
             <span className="pl-[1.125rem]">{c}</span>
           )}
         </th>
-        {prevision.map((m) => {
+        {prevision.map((m, i) => {
           const v = m[clave][c] ?? 0;
           const info: Celda | undefined = m.celdas[`${tipo}:${c}`];
           return (
             <td key={m.mes} className={`${celda} ${info ? TONOS[tipo][info.certeza] : ""}`}>
-              <span className={info?.cuotas ? `${MARCA_CUOTAS} px-1.5 py-0.5` : ""}>{v === 0 ? "–" : pesos(v)}</span>
+              {!sinReal(m) && (
+                <span className={info?.cuotas ? `${MARCA_CUOTAS} px-1.5 py-0.5` : ""}>{v === 0 ? "–" : pesos(v)}</span>
+              )}
+              {debajo((x) => x[clave][c] ?? 0, i)}
             </td>
           );
         })}
@@ -310,6 +406,7 @@ function Grilla({ prevision, subcategorias }: { prevision: MesPrevision[]; subca
   const total = "border-t border-black/10 font-semibold dark:border-white/15";
   const verde = () => "text-green-700 dark:text-green-400";
   const rojo = () => "text-red-700 dark:text-red-400";
+  const azul = () => "text-sky-700 dark:text-sky-400";
   const signo = (v: number) => (v < 0 ? "text-red-600" : v > 0 ? "text-green-700 dark:text-green-400" : "");
 
   return (
@@ -332,7 +429,7 @@ function Grilla({ prevision, subcategorias }: { prevision: MesPrevision[]; subca
             {ingresos.map((c) => filaCategoria("ingreso", c))}
             {fila(
               "Total ingresos",
-              prevision.map((m) => m.ingresos),
+              (m: MesPrevision) => m.ingresos,
               total,
               verde,
             )}
@@ -340,22 +437,52 @@ function Grilla({ prevision, subcategorias }: { prevision: MesPrevision[]; subca
             {egresos.map((c) => filaCategoria("egreso", c))}
             {fila(
               "Total egresos",
-              prevision.map((m) => m.egresos),
+              (m: MesPrevision) => m.egresos,
               total,
               rojo,
             )}
             {fila(
               "Resultado del mes",
-              prevision.map((m) => m.neto),
+              (m: MesPrevision) => m.neto,
               total,
               signo,
+            )}
+            {objetivos.length > 0 && (
+              <>
+                {separador("Ahorro e inversión")}
+                {objetivos.map(([id, nombre]) => {
+                  const de = (m: MesPrevision) => m.objetivos.find((o) => o.id === id);
+                  return (
+                    <Fragment key={id}>
+                      {fila(
+                        nombre,
+                        (m: MesPrevision) => de(m)?.objetivo ?? 0,
+                        "bg-sky-50 font-semibold dark:bg-sky-500/10",
+                        azul,
+                      )}
+                      {fila(
+                        "· transferido",
+                        (m: MesPrevision) => de(m)?.hecho ?? 0,
+                        "",
+                        azul,
+                      )}
+                    </Fragment>
+                  );
+                })}
+                {fila(
+                  "Queda libre",
+                  (m: MesPrevision) => m.neto - m.ahorroDelMes,
+                  total,
+                  signo,
+                )}
+              </>
             )}
             {prevision.some((m) => m.consumoTarjetas || m.venceTarjetas || m.impagoTarjetas) && (
               <>
                 {separador("Tarjetas de crédito")}
                 {fila(
                   "Consumo del mes",
-                  prevision.map((m) => m.consumoTarjetas),
+                  (m: MesPrevision) => m.consumoTarjetas,
                   "",
                   () => "text-amber-700 dark:text-amber-400",
                 )}
@@ -363,16 +490,17 @@ function Grilla({ prevision, subcategorias }: { prevision: MesPrevision[]; subca
                   <th scope="row" className={`${primera} font-normal`}>
                     Deuda del mes anterior
                   </th>
-                  {prevision.map((m) => (
+                  {prevision.map((m, i) => (
                     <td key={m.mes} className={`${celda} text-red-700 dark:text-red-400`}>
-                      {m.venceTarjetas === 0 ? "–" : `↘ ${pesos(m.venceTarjetas)}`}
+                      {sinReal(m) ? "" : m.venceTarjetas === 0 ? "–" : `↘ ${pesos(m.venceTarjetas)}`}
+                      {debajo((x) => x.venceTarjetas, i)}
                     </td>
                   ))}
                 </tr>
                 {prevision.some((m) => m.impagoTarjetas > 0) &&
                   fila(
                     "Vencido sin pagar",
-                    prevision.map((m) => -m.impagoTarjetas),
+                    (m: MesPrevision) => -m.impagoTarjetas,
                     "font-semibold",
                   )}
               </>
@@ -384,18 +512,18 @@ function Grilla({ prevision, subcategorias }: { prevision: MesPrevision[]; subca
                 <Fragment key={id}>
                   {fila(
                     `${nombre} (presupuesto)`,
-                    prevision.map((m) => de(m)?.monto ?? 0),
+                    (m: MesPrevision) => de(m)?.monto ?? 0,
                     "font-semibold",
                   )}
                   {fila(
                     "· gastado",
-                    prevision.map((m) => de(m)?.gastado ?? 0),
+                    (m: MesPrevision) => de(m)?.gastado ?? 0,
                     "",
                     rojo,
                   )}
                   {fila(
                     "· resto",
-                    prevision.map((m) => de(m)?.resto ?? 0),
+                    (m: MesPrevision) => de(m)?.resto ?? 0,
                     "",
                     signo,
                   )}
@@ -405,31 +533,31 @@ function Grilla({ prevision, subcategorias }: { prevision: MesPrevision[]; subca
             {separador("Cuentas al cierre")}
             {fila(
               "Disponible",
-              prevision.map((m) => m.disponible),
+              (m: MesPrevision) => m.disponible,
               "font-semibold",
               signo,
             )}
             {fila(
               "No inmediato",
-              prevision.map((m) => m.disponible48h),
+              (m: MesPrevision) => m.disponible48h,
               "",
               signo,
             )}
             {fila(
               "Reserva",
-              prevision.map((m) => m.reserva),
+              (m: MesPrevision) => m.reserva,
               "",
               signo,
             )}
             {fila(
               "Deuda tarjetas",
-              prevision.map((m) => -m.deudaTarjetas),
+              (m: MesPrevision) => -m.deudaTarjetas,
               "",
               signo,
             )}
             {fila(
               "Deuda en cuotas",
-              prevision.map((m) => -m.deudaCuotas),
+              (m: MesPrevision) => -m.deudaCuotas,
               "",
               signo,
             )}

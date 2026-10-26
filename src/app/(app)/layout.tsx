@@ -8,6 +8,7 @@ const SECCIONES = [
   { href: "/movimientos", nombre: "Movimientos" },
   { href: "/plan", nombre: "Plan" },
   { href: "/presupuestos", nombre: "Presupuestos" },
+  { href: "/ahorro", nombre: "Ahorro" },
   { href: "/cuentas", nombre: "Cuentas" },
   { href: "/categorias", nombre: "Categorías" },
 ];

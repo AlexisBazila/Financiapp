@@ -1,8 +1,8 @@
 import { generarCuotasPlan, generarCuotasPrestamo } from "./cuotas";
-import { fechaEnMes, mesDe, rangoMeses, sumarMeses } from "./fechas";
+import { diasDelMes, fechaEnMes, mesDe, rangoMeses, sumarMeses } from "./fechas";
 import { instanciarRecurrente } from "./recurrentes";
 import { cicloDe, resumenDeFecha } from "./tarjeta";
-import type { Centavos, Cuenta, Datos, Estado, Fecha, Mes, Movimiento, Presupuesto } from "./tipos";
+import type { Centavos, Cuenta, Datos, Estado, Fecha, Mes, Movimiento, ObjetivoAhorro, Presupuesto } from "./tipos";
 
 /** Qué tan seguro es un monto: planificado, ya pasó, o ya pasó y se chequeó con el banco. */
 export type Certeza = "planificado" | "real" | "conciliado";
@@ -22,6 +22,22 @@ export interface MesPresupuesto {
   gastado: Centavos;
   /** monto - gastado; negativo si se pasó. */
   resto: Centavos;
+}
+
+export interface MesObjetivo {
+  id: string;
+  nombre: string;
+  icono: string;
+  cuentaOrigenId: string;
+  cuentaDestinoId: string;
+  /** Lo que se planea pasar en el mes. */
+  objetivo: Centavos;
+  /** Transferencias confirmadas a la cuenta de destino en el mes. */
+  hecho: Centavos;
+  /** Lo que falta y la previsión pasa a fin de mes (0 en los meses pasados o si ya se cargó todo). */
+  previsto: Centavos;
+  /** Fecha en que la previsión pasa lo que falta. */
+  fecha: Fecha;
 }
 
 export interface PagoTarjeta {
@@ -84,12 +100,22 @@ export interface MesPrevision {
   /** Lo que queda por pagar en cuotas después de este mes. */
   deudaCuotas: Centavos;
   presupuestos: MesPresupuesto[];
+  /** Objetivos de ahorro e inversión del mes. */
+  objetivos: MesObjetivo[];
+  /**
+   * Lo que se ahorra o invierte en el mes con los objetivos: lo planeado (o lo cargado, si es más), o
+   * solo lo transferido si no se cuenta lo planificado.
+   */
+  ahorroDelMes: Centavos;
 }
 
 export interface OpcionesPrevision {
   desde: Mes;
   meses: number;
-  /** Qué movimientos se cuentan. Por defecto todos. */
+  /**
+   * Qué movimientos se cuentan. Por defecto todos. Sin "planificado", tampoco se prevé lo que resta de los
+   * presupuestos, lo que falta de los objetivos ni el pago automático de las tarjetas: queda solo lo real.
+   */
   estados?: Estado[];
   /**
    * Mes actual. Lo que resta de un presupuesto se prevé como gasto solo desde este mes: en los meses
@@ -270,6 +296,7 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
   const meses = rangoMeses(opciones.desde, opciones.meses);
   const hasta = meses[meses.length - 1];
   const estados = new Set(opciones.estados ?? ["real", "planificado", "pendiente"]);
+  const conPlan = estados.has("planificado");
   const cuentas = new Map(datos.cuentas.map((c) => [c.id, c]));
 
   const todos = expandir(datos, opciones.desde, hasta);
@@ -293,7 +320,7 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
       const pasado =
         (opciones.mesActual && mes < opciones.mesActual) ||
         (opciones.hoy && tarjeta && cicloDe(tarjeta, mes).cierre < opciones.hoy);
-      if (resumen.resto > 0 && !pasado) {
+      if (conPlan && resumen.resto > 0 && !pasado) {
         efectos.push(...efectosDe(restoPresupuesto(p, mes, resumen.resto), cuentas, opciones.desde));
       }
     }
@@ -385,7 +412,7 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
     for (const t of tarjetas) {
       const config = t.tarjeta!;
       if (vencido[t.id] > 0) vencidoTarjetas[t.id] = vencido[t.id];
-      if (config.pagoAutomatico !== false && !pagadoAMano.has(t.id) && vencido[t.id] > 0) {
+      if (conPlan && config.pagoAutomatico !== false && !pagadoAMano.has(t.id) && vencido[t.id] > 0) {
         const monto = Math.min(vencido[t.id], Math.max(0, saldos[config.cuentaPagoId]));
         if (monto > 0) {
           saldos[config.cuentaPagoId] -= monto;
@@ -397,6 +424,44 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
       // Lo pagado de más baja la deuda, pero no adelanta lo que vence después.
       if (vencido[t.id] < 0) vencido[t.id] = 0;
       impagoTarjetas += vencido[t.id];
+    }
+
+    // Objetivos de ahorro: lo que falta del mes pasa de la cuenta de origen a la de destino a fin de mes.
+    const objetivos: MesObjetivo[] = [];
+    let ahorroDelMes = 0;
+    for (const o of datos.objetivos ?? []) {
+      if (mes < o.desde || (o.hasta && mes > o.hasta)) continue;
+      const origen = cuentas.get(o.cuentaOrigenId);
+      const destino = cuentas.get(o.cuentaDestinoId);
+      if (!origen || !destino) continue;
+      const objetivo = montoObjetivo(o, mes, ingresos / cambioDe(origen));
+      const aDestino = movimientos.filter(
+        (m) =>
+          m.tipo === "transferencia" &&
+          m.cuentaDestinoId === o.cuentaDestinoId &&
+          m.cuentaId !== o.cuentaDestinoId &&
+          mesDe(m.fecha) === mes,
+      );
+      const cargado = aDestino.reduce((total, m) => total + m.monto, 0);
+      const hecho = aDestino.filter((m) => m.estado === "real").reduce((total, m) => total + m.monto, 0);
+      const futuro = !opciones.mesActual || mes >= opciones.mesActual;
+      const previsto = conPlan && futuro ? Math.max(0, objetivo - cargado) : 0;
+      if (previsto > 0) {
+        saldos[origen.id] += origen.tarjeta ? previsto : -previsto;
+        saldos[destino.id] += Math.round((previsto * cambioDe(origen)) / cambioDe(destino));
+      }
+      ahorroDelMes += conPlan ? Math.max(objetivo, cargado) : hecho;
+      objetivos.push({
+        id: o.id,
+        nombre: o.nombre,
+        icono: o.icono,
+        cuentaOrigenId: o.cuentaOrigenId,
+        cuentaDestinoId: o.cuentaDestinoId,
+        objetivo,
+        hecho,
+        previsto,
+        fecha: fechaEnMes(mes, diasDelMes(mes)),
+      });
     }
 
     let disponible = 0;
@@ -436,6 +501,8 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
       cuotasDelMes: cuotasPorMes.get(mes) ?? 0,
       deudaCuotas: cuotasDespuesDe(mes),
       presupuestos: presupuestosPorMes.get(mes) ?? [],
+      objetivos,
+      ahorroDelMes,
     };
   });
 }
@@ -448,6 +515,14 @@ function vencimientoEn(tarjeta: Cuenta, mes: Mes): string {
     if (mesDe(vencimiento) === mes) return vencimiento;
   }
   return fechaEnMes(mes, tarjeta.tarjeta!.diaVencimiento);
+}
+
+/** Lo que se planea ahorrar en un mes: el monto puesto a mano, el fijo o el porcentaje de los ingresos. */
+export function montoObjetivo(o: ObjetivoAhorro, mes: Mes, ingresos: Centavos): Centavos {
+  const aMano = o.montosPorMes?.[mes];
+  if (aMano !== undefined) return aMano;
+  if (o.porcentaje) return Math.round((ingresos * o.porcentaje) / 100);
+  return o.monto ?? 0;
 }
 
 /** Etiqueta con la que lo que resta de un presupuesto aparece en los egresos de la previsión. */

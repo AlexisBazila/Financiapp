@@ -18,9 +18,9 @@ export default async function Movimientos({ searchParams }: PageProps<"/movimien
   const { supabase } = await requerirUsuario();
   const hogar = await cargarHogar(supabase);
   const { datos, categorias } = hogar;
-  const { opciones, pagosAutomaticos } = movimientosDelMes(hogar, mes, actual);
+  const { opciones, pagosAutomaticos, ahorrosPrevistos } = movimientosDelMes(hogar, mes, actual);
 
-  const lista = [...expandir(datos, mes, mes), ...pagosAutomaticos]
+  const lista = [...expandir(datos, mes, mes), ...pagosAutomaticos, ...ahorrosPrevistos]
     .filter((m) => mesDe(m.fecha) === mes)
     .sort((a, b) => b.fecha.localeCompare(a.fecha) || a.descripcion.localeCompare(b.descripcion));
   const suma = (tipo: Movimiento["tipo"]) => lista.filter((m) => m.tipo === tipo).reduce((s, m) => s + m.monto, 0);

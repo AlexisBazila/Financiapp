@@ -8,6 +8,7 @@ import type {
   Origen,
   PlanCuotas,
   Prestamo,
+  ObjetivoAhorro,
   Presupuesto,
   Recurrente,
 } from "@/lib/finanzas/tipos";
@@ -237,5 +238,33 @@ export function aPresupuesto(fila: FilaPresupuesto): Presupuesto {
     hasta: fila.hasta ?? undefined,
     categoriaIds: fila.categoria_ids,
     cuentaIds: fila.cuenta_ids ?? undefined,
+  };
+}
+
+export interface FilaObjetivo {
+  id: string;
+  nombre: string;
+  icono: string;
+  cuenta_origen_id: string;
+  cuenta_destino_id: string;
+  monto: number | null;
+  porcentaje: number | string | null;
+  montos_por_mes: Record<string, number> | null;
+  desde: string;
+  hasta: string | null;
+}
+
+export function aObjetivo(fila: FilaObjetivo): ObjetivoAhorro {
+  return {
+    id: fila.id,
+    nombre: fila.nombre,
+    icono: fila.icono,
+    cuentaOrigenId: fila.cuenta_origen_id,
+    cuentaDestinoId: fila.cuenta_destino_id,
+    ...(fila.monto !== null ? { monto: Number(fila.monto) } : {}),
+    ...(fila.porcentaje !== null ? { porcentaje: Number(fila.porcentaje) } : {}),
+    montosPorMes: Object.fromEntries(Object.entries(fila.montos_por_mes ?? {}).map(([m, v]) => [m, Number(v)])),
+    desde: fila.desde,
+    hasta: fila.hasta ?? undefined,
   };
 }
