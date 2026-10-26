@@ -68,14 +68,15 @@ export function VistaPrevision({ datos, escenarios: todos, desde, meses, visible
 }
 
 function Resumen({ mes }: { mes: MesPrevision }) {
+  // Las deudas se muestran en negativo, para leerlas igual que los saldos.
   const tarjetas = [
     { titulo: "Disponible", valor: mes.disponible, nota: "para gastar ya" },
     { titulo: "En 48 h", valor: mes.disponible48h, nota: "inversiones rescatables" },
     { titulo: "Reserva", valor: mes.reserva, nota: "ahorro apartado" },
-    { titulo: "Deuda tarjetas", valor: mes.deudaTarjetas, nota: "resúmenes por pagar" },
+    { titulo: "Deuda tarjetas", valor: -mes.deudaTarjetas, nota: "resúmenes por pagar" },
     {
       titulo: "Deuda en cuotas",
-      valor: mes.deudaCuotas,
+      valor: -mes.deudaCuotas,
       nota: `al cierre · $ ${pesos(mes.cuotasDelMes)} se pagan este mes`,
     },
   ];
@@ -94,8 +95,12 @@ function Resumen({ mes }: { mes: MesPrevision }) {
         {tarjetas.map((t) => (
           <div key={t.titulo} className="rounded-xl border border-black/10 p-4 dark:border-white/15">
             <div className="text-sm text-black/60 dark:text-white/60">{t.titulo}</div>
-            <div className={`mt-1 text-xl font-semibold tabular-nums ${t.valor < 0 ? "text-red-600" : ""}`}>
-              $ {pesos(t.valor)}
+            <div
+              className={`mt-1 text-xl font-semibold tabular-nums ${
+                t.valor < 0 ? "text-red-600 dark:text-red-400" : t.valor > 0 ? "text-green-700 dark:text-green-400" : ""
+              }`}
+            >
+              {conSigno(t.valor)}
             </div>
             <div className="text-xs text-black/50 dark:text-white/50">{t.nota}</div>
           </div>
@@ -103,6 +108,11 @@ function Resumen({ mes }: { mes: MesPrevision }) {
       </div>
     </section>
   );
+}
+
+/** "$ 1.234" o "−$ 1.234". */
+function conSigno(centavos: number): string {
+  return `${centavos < 0 ? "−" : ""}$ ${pesos(Math.abs(centavos))}`;
 }
 
 function categorias(prevision: MesPrevision[], clave: "ingresosPorCategoria" | "egresosPorCategoria") {
@@ -225,6 +235,33 @@ function Grilla({ prevision }: { prevision: MesPrevision[] }) {
               total,
               signo,
             )}
+            {prevision.some((m) => m.consumoTarjetas || m.venceTarjetas || m.impagoTarjetas) && (
+              <>
+                {separador("Tarjetas de crédito")}
+                {fila(
+                  "Consumo del mes",
+                  prevision.map((m) => m.consumoTarjetas),
+                  "",
+                  () => "text-amber-700 dark:text-amber-400",
+                )}
+                <tr>
+                  <th scope="row" className={`${primera} font-normal`}>
+                    Deuda del mes anterior
+                  </th>
+                  {prevision.map((m) => (
+                    <td key={m.mes} className={`${celda} text-red-700 dark:text-red-400`}>
+                      {m.venceTarjetas === 0 ? "–" : `↘ ${pesos(m.venceTarjetas)}`}
+                    </td>
+                  ))}
+                </tr>
+                {prevision.some((m) => m.impagoTarjetas > 0) &&
+                  fila(
+                    "Vencido sin pagar",
+                    prevision.map((m) => -m.impagoTarjetas),
+                    "font-semibold",
+                  )}
+              </>
+            )}
             {presupuestos.length > 0 && separador("Presupuestos")}
             {presupuestos.map(([id, nombre]) => {
               const de = (m: MesPrevision) => m.presupuestos.find((p) => p.id === id);
@@ -255,28 +292,31 @@ function Grilla({ prevision }: { prevision: MesPrevision[] }) {
               "Disponible",
               prevision.map((m) => m.disponible),
               "font-semibold",
+              signo,
             )}
             {fila(
               "En 48 h",
               prevision.map((m) => m.disponible48h),
+              "",
+              signo,
             )}
             {fila(
               "Reserva",
               prevision.map((m) => m.reserva),
+              "",
+              signo,
             )}
             {fila(
               "Deuda tarjetas",
-              prevision.map((m) => m.deudaTarjetas),
+              prevision.map((m) => -m.deudaTarjetas),
+              "",
+              signo,
             )}
-            {prevision.some((m) => m.impagoTarjetas > 0) &&
-              fila(
-                "· vencido sin pagar",
-                prevision.map((m) => m.impagoTarjetas),
-                "text-red-600",
-              )}
             {fila(
               "Deuda en cuotas",
-              prevision.map((m) => m.deudaCuotas),
+              prevision.map((m) => -m.deudaCuotas),
+              "",
+              signo,
             )}
           </tbody>
         </table>
@@ -298,8 +338,8 @@ function Grilla({ prevision }: { prevision: MesPrevision[] }) {
           <span className={`${MARCA_CUOTAS} px-1.5`}>123</span> incluye cuotas
         </span>
         <span>
-          Las compras con tarjeta cuentan el mes en que vence el resumen. El pago automático usa solo lo que hay en
-          la cuenta de pago; lo que no alcanza queda como deuda vencida.
+          Lo consumido con tarjeta en un mes (↘) se paga el mes siguiente y ahí se cuenta en los egresos. El pago
+          automático usa solo lo que hay en la cuenta de pago; lo que no alcanza queda como vencido sin pagar.
         </span>
       </div>
     </section>
