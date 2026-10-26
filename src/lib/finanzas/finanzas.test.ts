@@ -830,3 +830,29 @@ describe("deudas que se reorganizan", () => {
     expect(dic.venceTarjetas).toBe(21_253_00);
   });
 });
+
+describe("saldo inicial con fecha", () => {
+  const cuota = (id: string, fecha: string, monto: number): Movimiento => ({
+    id,
+    fecha,
+    descripcion: "Cuota",
+    tipo: "egreso",
+    monto,
+    cuentaId: "banco",
+    categoria: "Préstamos",
+    estado: "planificado",
+    origen: { tipo: "manual" },
+  });
+
+  it("lo de antes de la fecha del saldo ya está incluido: cuenta como gasto pero no lo vuelve a descontar", () => {
+    const datos: Datos = {
+      ...vacio(),
+      cuentas: [{ ...banco, saldoInicial: 29_138_39, saldoFecha: "2026-10-26" }, ahorro, visa],
+      movimientos: [cuota("a", "2026-10-01", 30_083_33), cuota("b", "2026-10-28", 1_000_00), cuota("c", "2026-11-01", 28_812_50)],
+    };
+    const [oct, nov] = calcularPrevision(datos, { desde: "2026-10", meses: 2 });
+    expect(oct.egresos).toBe(31_083_33);
+    expect(oct.saldos.banco).toBe(28_138_39);
+    expect(nov.saldos.banco).toBe(28_138_39 - 28_812_50);
+  });
+});

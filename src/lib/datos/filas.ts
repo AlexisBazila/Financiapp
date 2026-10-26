@@ -21,6 +21,7 @@ export interface FilaCuenta {
   tipo: Cuenta["tipo"];
   disponibilidad: Cuenta["disponibilidad"];
   saldo_inicial: number;
+  saldo_fecha: string | null;
   dia_cierre: number | null;
   dia_vencimiento: number | null;
   cuenta_pago_id: string | null;
@@ -124,6 +125,7 @@ export function aCuenta(fila: FilaCuenta, ciclos: FilaCiclo[], cambios: Record<s
     tipo: fila.tipo,
     disponibilidad: fila.disponibilidad,
     saldoInicial: Number(fila.saldo_inicial),
+    ...(fila.saldo_fecha && fila.tipo !== "tarjeta" ? { saldoFecha: fila.saldo_fecha } : {}),
     titular: fila.titular ?? undefined,
     ...(fila.moneda && fila.moneda !== "ARS" ? { moneda: fila.moneda, cambio: cambios[fila.moneda] ?? 1 } : {}),
   };
