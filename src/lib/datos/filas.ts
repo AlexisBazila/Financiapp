@@ -301,7 +301,12 @@ export function aDeuda(fila: FilaDeuda): Deuda {
     cuentaId: fila.cuenta_id,
     diaDelMes: fila.dia_del_mes,
     cuotas: (fila.cuotas ?? [])
-      .map((c) => ({ numero: Number(c.numero), monto: Number(c.monto), mes: c.mes }))
+      .map((c) => ({
+        numero: Number(c.numero),
+        monto: Number(c.monto),
+        mes: c.mes,
+        ...(c.vencimiento ? { vencimiento: c.vencimiento } : {}),
+      }))
       .sort((a, b) => a.numero - b.numero),
   };
 }

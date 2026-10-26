@@ -124,7 +124,8 @@ export function generarCuotasPrestamo(prestamo: Prestamo): Movimiento[] {
  * ese mes, así que cuenta como gasto de ese mes.
  */
 export function generarCuotasDeuda(deuda: Deuda, cuenta: Cuenta): Movimiento[] {
-  const total = deuda.cuotas.length;
+  // Si se quitaron cuotas quedan huecos en la numeración: el total es el número más alto.
+  const total = Math.max(0, ...deuda.cuotas.map((c) => c.numero));
   return deuda.cuotas.map((c) => {
     const base = {
       id: `${deuda.id}#${c.numero}`,
