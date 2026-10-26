@@ -81,6 +81,9 @@ export interface FilaPrestamo {
   tasa_anual: number | string;
   sistema: Prestamo["sistema"];
   cuotas_manuales: number[] | null;
+  requiere_confirmacion: boolean;
+  ingreso_mes: string | null;
+  ingreso_monto: number | null;
 }
 
 export interface FilaRecurrente {
@@ -187,6 +190,10 @@ export function aPrestamo(fila: FilaPrestamo): Prestamo {
     tasaAnual: Number(fila.tasa_anual),
     sistema: fila.sistema,
     cuotasManuales: fila.cuotas_manuales?.map(Number),
+    requiereConfirmacion: fila.requiere_confirmacion,
+    ...(fila.ingreso_mes && fila.ingreso_monto
+      ? { ingreso: { mes: fila.ingreso_mes, monto: Number(fila.ingreso_monto) } }
+      : {}),
   };
 }
 
@@ -222,6 +229,7 @@ export interface FilaPresupuesto {
   nombre: string;
   icono: string;
   monto: number;
+  aumento_mensual: number | string;
   cuenta_id: string;
   desde: string;
   hasta: string | null;
@@ -235,6 +243,7 @@ export function aPresupuesto(fila: FilaPresupuesto): Presupuesto {
     nombre: fila.nombre,
     icono: fila.icono,
     monto: Number(fila.monto),
+    aumentoMensual: Number(fila.aumento_mensual ?? 0),
     cuentaId: fila.cuenta_id,
     desde: fila.desde,
     hasta: fila.hasta ?? undefined,

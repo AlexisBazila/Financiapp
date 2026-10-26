@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { categoriaElegida } from "@/lib/datos/categoria-elegida";
 import { entero, pesosACentavos, texto } from "@/lib/datos/formularios";
+import type { Movimiento } from "@/lib/finanzas/tipos";
 import { requerirUsuario } from "@/lib/supabase/servidor";
 
 export interface Resultado {
@@ -67,15 +68,29 @@ export async function crearPlanCuotas(_: Resultado, form: FormData): Promise<Res
   });
 }
 
-export async function crearPrestamo(_: Resultado, form: FormData): Promise<Resultado> {
+/**
+ * Crea o edita un préstamo. "fija" es la cuota que informa el banco (con impuestos y seguros), repetida;
+ * se guarda como cuotas cargadas a mano.
+ */
+export async function guardarPrestamo(id: string | null, _: Resultado, form: FormData): Promise<Resultado> {
   const descripcion = texto(form, "descripcion");
   const sistema = texto(form, "sistema");
   const primeraCuota = texto(form, "primera_cuota");
   const tasaAnual = tasa(form);
   if (!descripcion) return { error: "Poné un nombre al préstamo." };
-  if (!["frances", "aleman", "manual"].includes(sistema)) return { error: "Elegí el sistema." };
+  if (!["frances", "aleman", "fija", "manual"].includes(sistema)) return { error: "Elegí cómo se calculan las cuotas." };
   if (!FECHA.test(primeraCuota)) return { error: "Elegí la fecha de la primera cuota." };
   if (tasaAnual === null) return { error: "La tasa tiene que ser un número." };
+  const capital = pesosACentavos(texto(form, "capital"));
+  if (capital !== null && capital < 0) return { error: "El monto pedido no puede ser negativo." };
+
+  const conIngreso = form.get("registrar_ingreso") === "on";
+  const ingresoMes = texto(form, "ingreso_mes");
+  // Sin monto, entró lo pedido.
+  const ingresoMonto = pesosACentavos(texto(form, "ingreso_monto")) ?? capital;
+  if (conIngreso && !MES.test(ingresoMes)) return { error: "Elegí en qué mes entró la plata del préstamo." };
+  if (conIngreso && (!ingresoMonto || ingresoMonto <= 0)) return { error: "Poné cuánto entró del préstamo." };
+
   const { supabase } = await requerirUsuario();
   const categoria = await categoriaElegida(supabase, form, "egreso");
   if ("error" in categoria) return categoria;
@@ -88,9 +103,18 @@ export async function crearPrestamo(_: Resultado, form: FormData): Promise<Resul
     cuenta_id: texto(form, "cuenta_id"),
     primera_cuota: primeraCuota,
     tasa_anual: tasaAnual,
-    sistema,
+    capital: capital ?? 0,
+    requiere_confirmacion: texto(form, "debito") === "confirmar",
+    ingreso_mes: conIngreso ? ingresoMes : null,
+    ingreso_monto: conIngreso ? ingresoMonto : null,
   };
-  if (sistema === "manual") {
+  if (sistema === "fija") {
+    const cuota = pesosACentavos(texto(form, "cuota"));
+    const cantidad = entero(form, "cantidad");
+    if (!cuota || cuota <= 0) return { error: "La cuota tiene que ser un número mayor a cero." };
+    if (!cantidad || cantidad > 480) return { error: "La cantidad de cuotas va de 1 a 480." };
+    Object.assign(fila, { sistema: "manual", cuotas_manuales: Array(cantidad).fill(cuota), cantidad });
+  } else if (sistema === "manual") {
     const cuotas = texto(form, "cuotas_manuales")
       .split(/\n+/)
       .map((l) => l.trim())
@@ -99,15 +123,43 @@ export async function crearPrestamo(_: Resultado, form: FormData): Promise<Resul
     if (cuotas.length === 0 || cuotas.some((c) => !c || c <= 0)) {
       return { error: "Escribí una cuota por línea, todas con números mayores a cero." };
     }
-    Object.assign(fila, { cuotas_manuales: cuotas, cantidad: cuotas.length, capital: 0 });
+    Object.assign(fila, { sistema, cuotas_manuales: cuotas, cantidad: cuotas.length });
   } else {
-    const capital = pesosACentavos(texto(form, "capital"));
     const cantidad = entero(form, "cantidad");
     if (!capital || capital <= 0) return { error: "El capital tiene que ser un número mayor a cero." };
     if (!cantidad || cantidad > 480) return { error: "La cantidad de cuotas va de 1 a 480." };
-    Object.assign(fila, { capital, cantidad });
+    Object.assign(fila, { sistema, cantidad, cuotas_manuales: null });
   }
-  return guardar("prestamos", fila);
+  if (!id) return guardar("prestamos", fila);
+  const { error } = await supabase.from("prestamos").update(fila).eq("id", id);
+  if (error) return { error: `No se pudo guardar: ${error.message}` };
+  revalidatePath("/", "layout");
+  return { ok: true };
+}
+
+/** Confirma una cuota pendiente de un préstamo con lo que realmente se debitó. */
+export async function confirmarCuota(mov: Movimiento, _: Resultado, form: FormData): Promise<Resultado> {
+  const monto = pesosACentavos(texto(form, "monto"));
+  const fecha = texto(form, "fecha");
+  if (!monto || monto <= 0) return { error: "El monto tiene que ser mayor a cero." };
+  if (!FECHA.test(fecha)) return { error: "Elegí la fecha." };
+  if (mov.origen.tipo !== "prestamo") return { error: "Solo se confirman cuotas de préstamos." };
+  const { supabase } = await requerirUsuario();
+  const { error } = await supabase.from("movimientos").insert({
+    fecha,
+    descripcion: mov.descripcion,
+    tipo: mov.tipo,
+    monto,
+    cuenta_id: mov.cuentaId,
+    categoria: mov.categoria ?? null,
+    categoria_id: mov.categoriaId ?? null,
+    contraparte: mov.contraparte ?? null,
+    estado: "real",
+    origen: mov.origen,
+  });
+  if (error) return { error: error.code === "23505" ? "Esa cuota ya estaba confirmada." : `No se pudo guardar: ${error.message}` };
+  revalidatePath("/", "layout");
+  return { ok: true };
 }
 
 export async function crearRecurrente(_: Resultado, form: FormData): Promise<Resultado> {

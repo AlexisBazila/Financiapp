@@ -126,6 +126,10 @@ export interface Prestamo {
   /** francés: cuota fija. alemán: amortización fija, cuota decreciente. manual: tabla cargada a mano. */
   sistema: "frances" | "aleman" | "manual";
   cuotasManuales?: Centavos[];
+  /** Si es true, cada cuota queda pendiente hasta que la confirmes; si no, se debita sola. */
+  requiereConfirmacion?: boolean;
+  /** La plata del préstamo que entra a la cuenta, y en qué mes. Sin `ingreso`, solo cuentan las cuotas. */
+  ingreso?: { mes: Mes; monto: Centavos };
 }
 
 export interface Recurrente {
@@ -153,6 +157,8 @@ export interface Presupuesto {
   nombre: string;
   icono: string;
   monto: Centavos;
+  /** Aumento por mes en %, para acompañar la inflación: el monto de cada mes es el anterior más ese %. */
+  aumentoMensual?: number;
   /** Cuenta de la que sale lo que resta del presupuesto. */
   cuentaId: string;
   desde: Mes;

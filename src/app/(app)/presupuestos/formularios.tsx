@@ -161,6 +161,18 @@ export function FormularioPresupuesto({
           <input name="hasta" type="month" defaultValue={inicial?.hasta} className={campo} />
         </label>
       )}
+      {repite && (
+        <label className={etiqueta}>
+          Aumento por mes (%), para la inflación
+          <input
+            name="aumento_mensual"
+            inputMode="decimal"
+            defaultValue={inicial?.aumentoMensual ? String(inicial.aumentoMensual).replace(".", ",") : undefined}
+            placeholder="0, o por ejemplo 2,5"
+            className={campo}
+          />
+        </label>
+      )}
       <ElegirCategorias categorias={categorias} iniciales={inicial?.categoriaIds ?? []} />
       <ElegirCuentas cuentas={cuentas} iniciales={inicial?.cuentaIds} />
       <div className="flex flex-wrap items-center gap-3 sm:col-span-3">

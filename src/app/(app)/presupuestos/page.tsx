@@ -60,7 +60,14 @@ export default async function Presupuestos({ searchParams }: PageProps<"/presupu
                 <h3 className="text-lg font-semibold">
                   {p.icono} {p.nombre}
                 </h3>
-                <span className="tabular-nums">$ {pesosExactos(p.monto)} / mes</span>
+                <span className="text-right">
+                  <span className="tabular-nums">$ {pesosExactos(r?.monto ?? p.monto)} en {nombreMes(mes)}</span>
+                  {p.aumentoMensual ? (
+                    <span className={`block text-xs ${textoSuave}`}>
+                      sube {String(p.aumentoMensual).replace(".", ",")} % por mes desde {nombreMes(p.desde)}
+                    </span>
+                  ) : null}
+                </span>
               </div>
               {r ? (
                 <>
