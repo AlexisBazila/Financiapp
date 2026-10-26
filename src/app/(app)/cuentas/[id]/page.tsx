@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { cargarHogar } from "@/lib/datos/cargar";
+import { simbolo } from "@/lib/datos/monedas";
 import { hoy, mesDe, mesesEntre } from "@/lib/finanzas/fechas";
 import { calcularPrevision, expandir } from "@/lib/finanzas/prevision";
 import { requerirUsuario } from "@/lib/supabase/servidor";
@@ -64,14 +65,17 @@ export default async function Cuenta({ params, searchParams }: PageProps<"/cuent
         <div className={`${caja} flex flex-wrap justify-between gap-4 p-4`}>
           <div>
             <div className={`text-sm ${textoSuave}`}>{esTarjeta ? "Deuda" : "Saldo"} al cierre del mes</div>
-            <div className="text-2xl font-semibold tabular-nums">$ {pesosExactos(saldos.cierre)}</div>
+            <div className="text-2xl font-semibold tabular-nums">
+              {simbolo(cuenta.moneda)} {pesosExactos(saldos.cierre)}
+            </div>
           </div>
           <div className="text-right">
             <div className={`text-sm ${textoSuave}`}>Período</div>
             <div
               className={`text-xl font-semibold tabular-nums ${periodoBueno ? "text-green-700 dark:text-green-400" : "text-red-700 dark:text-red-400"}`}
             >
-              {periodo > 0 ? "+" : periodo < 0 ? "−" : ""}$ {pesosExactos(Math.abs(periodo))}
+              {periodo > 0 ? "+" : periodo < 0 ? "−" : ""}
+              {simbolo(cuenta.moneda)} {pesosExactos(Math.abs(periodo))}
             </div>
           </div>
         </div>

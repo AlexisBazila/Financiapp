@@ -35,6 +35,18 @@ export interface PagoTarjeta {
   fecha: string;
 }
 
+/** Un movimiento (o una compra en cuotas, un préstamo o un recurrente) dentro de una categoría del mes. */
+export interface DetalleItem {
+  /** Igual en todos los meses para la misma compra en cuotas, préstamo o recurrente. */
+  clave: string;
+  nombre: string;
+  categoriaId?: string;
+  monto: Centavos;
+  certeza: Certeza;
+  /** "3/18" si es una cuota. */
+  cuota?: string;
+}
+
 export interface MesPrevision {
   mes: Mes;
   ingresos: Centavos;
@@ -45,6 +57,8 @@ export interface MesPrevision {
   egresosPorCategoria: Record<string, Centavos>;
   /** Certeza de cada monto por categoría; clave `ingreso:categoría` o `egreso:categoría`. */
   celdas: Record<string, Celda>;
+  /** Qué compone cada monto por categoría, con la misma clave que `celdas`. */
+  detalle: Record<string, DetalleItem[]>;
   /** Saldo de cada cuenta al cierre del mes. En tarjetas, la deuda. */
   saldos: Record<string, Centavos>;
   /** Lo que se puede gastar ya. */
@@ -133,8 +147,15 @@ interface Efecto {
   consumo?: Centavos;
   /** Transferencia que entra a una tarjeta: un pago del resumen. */
   pago?: Centavos;
-  /** Si el efecto es plata que entra o sale del hogar en ese mes, su categoría. */
-  flujo?: { tipo: "ingreso" | "egreso"; categoria: string; monto: Centavos; certeza: Certeza; cuota: boolean };
+  /** Si el efecto es plata que entra o sale del hogar en ese mes, su categoría. Monto en pesos. */
+  flujo?: {
+    tipo: "ingreso" | "egreso";
+    categoria: string;
+    monto: Centavos;
+    certeza: Certeza;
+    cuota: boolean;
+    item?: Omit<DetalleItem, "monto" | "certeza">;
+  };
 }
 
 function certezaDe(mov: Movimiento): Certeza {
@@ -144,12 +165,27 @@ function certezaDe(mov: Movimiento): Certeza {
 
 const ORDEN_CERTEZA: Record<Certeza, number> = { planificado: 0, real: 1, conciliado: 2 };
 
+/** Pesos por unidad de la moneda de la cuenta. */
+const cambioDe = (c: Cuenta) => c.cambio ?? 1;
+
+/** Cómo aparece un movimiento en el detalle de su categoría. */
+function itemDe(mov: Movimiento): Omit<DetalleItem, "monto" | "certeza"> {
+  const o = mov.origen;
+  const base = { nombre: mov.descripcion.replace(/\s*\(\d+\/\d+\)$/, "") || mov.categoria || "Sin descripción", categoriaId: mov.categoriaId };
+  if (o.tipo === "cuotas") return { ...base, clave: `cuotas:${o.planId}`, cuota: `${o.numero}/${o.total}` };
+  if (o.tipo === "prestamo") return { ...base, clave: `prestamo:${o.prestamoId}`, cuota: `${o.numero}/${o.total}` };
+  if (o.tipo === "recurrente") return { ...base, nombre: mov.descripcion || base.nombre, clave: `recurrente:${o.recurrenteId}` };
+  return { ...base, nombre: mov.descripcion || base.nombre, clave: mov.id };
+}
+
 function efectosDe(mov: Movimiento, cuentas: Map<string, Cuenta>, desde: Mes): Efecto[] {
   const cuenta = cuentas.get(mov.cuentaId);
   if (!cuenta) throw new Error(`No existe la cuenta ${mov.cuentaId}`);
   const categoria = mov.categoria ?? "Sin categoría";
   const certeza = certezaDe(mov);
   const cuota = claveCuota(mov.origen) !== undefined;
+  const enPesos = Math.round(mov.monto * cambioDe(cuenta));
+  const item = itemDe(mov);
 
   if (mov.tipo === "transferencia") {
     const destino = cuentas.get(mov.cuentaDestinoId ?? "");
@@ -163,7 +199,8 @@ function efectosDe(mov: Movimiento, cuentas: Map<string, Cuenta>, desde: Mes): E
       {
         mes,
         cuentaId: destino.id,
-        delta: signoDestino * mov.monto,
+        // Entre monedas distintas, lo que llega se convierte con los tipos de cambio cargados.
+        delta: signoDestino * Math.round((mov.monto * cambioDe(cuenta)) / cambioDe(destino)),
         ...(destino.tarjeta && !cuenta.tarjeta ? { pago: mov.monto } : {}),
       },
     ];
@@ -176,7 +213,7 @@ function efectosDe(mov: Movimiento, cuentas: Map<string, Cuenta>, desde: Mes): E
         mes: mesDe(mov.fecha),
         cuentaId: cuenta.id,
         delta: signo * mov.monto,
-        flujo: { tipo: mov.tipo, categoria, monto: mov.monto, certeza, cuota },
+        flujo: { tipo: mov.tipo, categoria, monto: enPesos, certeza, cuota, item },
       },
     ];
   }
@@ -194,7 +231,7 @@ function efectosDe(mov: Movimiento, cuentas: Map<string, Cuenta>, desde: Mes): E
       cuentaId: cuenta.id,
       delta: 0,
       vence: -signo * mov.monto,
-      flujo: { tipo: mov.tipo, categoria, monto: mov.monto, certeza, cuota },
+      flujo: { tipo: mov.tipo, categoria, monto: enPesos, certeza, cuota, item },
     },
   ];
 }
@@ -240,7 +277,7 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
     const delMes: MesPresupuesto[] = [];
     for (const p of datos.presupuestos ?? []) {
       if (mes < p.desde || (p.hasta && mes > p.hasta)) continue;
-      const resumen = resumenPresupuesto(p, mes, movimientos);
+      const resumen = resumenPresupuesto(p, mes, movimientos, cuentas);
       delMes.push(resumen);
       if (resumen.resto > 0 && (!opciones.mesActual || mes >= opciones.mesActual)) {
         efectos.push(...efectosDe(restoPresupuesto(p, mes, resumen.resto), cuentas, opciones.desde));
@@ -280,6 +317,7 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
     const ingresosPorCategoria: Record<string, Centavos> = {};
     const egresosPorCategoria: Record<string, Centavos> = {};
     const celdas: Record<string, Celda> = {};
+    const items = new Map<string, Map<string, DetalleItem>>();
     let ingresos = 0;
     let egresos = 0;
 
@@ -305,6 +343,17 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
           previa && ORDEN_CERTEZA[previa.certeza] < ORDEN_CERTEZA[e.flujo.certeza] ? previa.certeza : e.flujo.certeza,
         cuotas: Boolean(previa?.cuotas) || e.flujo.cuota,
       };
+      if (e.flujo.item) {
+        const delGrupo = items.get(clave) ?? new Map<string, DetalleItem>();
+        items.set(clave, delGrupo);
+        const previo = delGrupo.get(e.flujo.item.clave);
+        delGrupo.set(e.flujo.item.clave, {
+          ...e.flujo.item,
+          monto: (previo?.monto ?? 0) + e.flujo.monto,
+          certeza:
+            previo && ORDEN_CERTEZA[previo.certeza] < ORDEN_CERTEZA[e.flujo.certeza] ? previo.certeza : e.flujo.certeza,
+        });
+      }
       if (e.flujo.tipo === "ingreso") {
         ingresos += e.flujo.monto;
         ingresosPorCategoria[e.flujo.categoria] = (ingresosPorCategoria[e.flujo.categoria] ?? 0) + e.flujo.monto;
@@ -341,7 +390,7 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
     let reserva = 0;
     let deudaTarjetas = 0;
     for (const c of datos.cuentas) {
-      const saldo = saldos[c.id];
+      const saldo = Math.round(saldos[c.id] * cambioDe(c));
       if (c.tarjeta) deudaTarjetas += saldo;
       else if (c.disponibilidad === "inmediata") disponible += saldo;
       else if (c.disponibilidad === "48h") disponible48h += saldo;
@@ -356,6 +405,9 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
       ingresosPorCategoria,
       egresosPorCategoria,
       celdas,
+      detalle: Object.fromEntries(
+        [...items].map(([clave, delGrupo]) => [clave, [...delGrupo.values()].sort((a, b) => b.monto - a.monto)]),
+      ),
       saldos: { ...saldos },
       disponible,
       disponible48h,
@@ -389,19 +441,24 @@ export function categoriaResto(p: Pick<Presupuesto, "icono" | "nombre">): string
   return `${p.icono ? `${p.icono} ` : ""}${p.nombre} (resto del presupuesto)`;
 }
 
-function resumenPresupuesto(p: Presupuesto, mes: Mes, movimientos: Movimiento[]): MesPresupuesto {
+function resumenPresupuesto(
+  p: Presupuesto,
+  mes: Mes,
+  movimientos: Movimiento[],
+  cuentas: Map<string, Cuenta>,
+): MesPresupuesto {
   const categorias = new Set(p.categoriaIds);
-  const cuentas = p.cuentaIds && new Set(p.cuentaIds);
+  const elegidas = p.cuentaIds && new Set(p.cuentaIds);
   const gastado = movimientos
     .filter(
       (m) =>
         m.tipo === "egreso" &&
         m.categoriaId &&
         categorias.has(m.categoriaId) &&
-        (!cuentas || cuentas.has(m.cuentaId)) &&
+        (!elegidas || elegidas.has(m.cuentaId)) &&
         mesDe(m.fecha) === mes,
     )
-    .reduce((total, m) => total + m.monto, 0);
+    .reduce((total, m) => total + Math.round(m.monto * (cuentas.get(m.cuentaId)?.cambio ?? 1)), 0);
   return { id: p.id, nombre: p.nombre, monto: p.monto, gastado, resto: p.monto - gastado };
 }
 

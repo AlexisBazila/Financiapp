@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { cargarHogar } from "@/lib/datos/cargar";
+import { etiqueta } from "@/lib/datos/categorias";
 import { hoy, mesDe, mesesEntre, nombreMes } from "@/lib/finanzas/fechas";
 import { requerirUsuario } from "@/lib/supabase/servidor";
 import { boton, textoSuave } from "../estilos";
@@ -9,7 +10,8 @@ const MESES_ADELANTE = 12;
 
 export default async function Prevision() {
   const { supabase } = await requerirUsuario();
-  const { hogar, datos, escenarios } = await cargarHogar(supabase);
+  const { hogar, datos, escenarios, categorias } = await cargarHogar(supabase);
+  const subcategorias = Object.fromEntries(categorias.filter((c) => c.padreId).map((c) => [c.id, etiqueta(c)]));
 
   if (datos.cuentas.length === 0) {
     return (
@@ -41,6 +43,7 @@ export default async function Prevision() {
         meses={meses}
         visibleDesde={visibleDesde}
         mesActual={mesActual}
+        subcategorias={subcategorias}
       />
     </>
   );
