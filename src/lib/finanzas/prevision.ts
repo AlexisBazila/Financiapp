@@ -1,4 +1,4 @@
-import { generarCuotasPlan, generarCuotasPrestamo } from "./cuotas";
+import { generarCuotasDeuda, generarCuotasPlan, generarCuotasPrestamo } from "./cuotas";
 import { diasDelMes, fechaEnMes, mesDe, rangoMeses, sumarMeses } from "./fechas";
 import { instanciarRecurrente } from "./recurrentes";
 import { cicloDe, resumenDeFecha } from "./tarjeta";
@@ -137,6 +137,7 @@ export interface OpcionesPrevision {
 function claveCuota(origen: Movimiento["origen"]): string | undefined {
   if (origen.tipo === "cuotas") return `cuotas:${origen.planId}:${origen.numero}`;
   if (origen.tipo === "prestamo") return `prestamo:${origen.prestamoId}:${origen.numero}`;
+  if (origen.tipo === "deuda") return `deuda:${origen.deudaId}:${origen.numero}`;
   return undefined;
 }
 
@@ -157,6 +158,7 @@ export function expandir(datos: Datos, desde: Mes, hasta: Mes): Movimiento[] {
     ...datos.movimientos,
     ...datos.planesCuotas.flatMap((p) => generarCuotasPlan(p, cuenta(p.cuentaId))).filter(sinCargar),
     ...datos.prestamos.flatMap(generarCuotasPrestamo).filter(sinCargar),
+    ...(datos.deudas ?? []).flatMap((d) => generarCuotasDeuda(d, cuenta(d.cuentaId))).filter(sinCargar),
     ...datos.recurrentes.flatMap((r) => instanciarRecurrente(r, datos.movimientos, desde, hasta)),
   ];
 }
@@ -225,8 +227,16 @@ function itemDe(mov: Movimiento): Omit<DetalleItem, "monto" | "certeza"> {
   };
   if (o.tipo === "cuotas") return { ...base, clave: `cuotas:${o.planId}`, cuota: `${o.numero}/${o.total}` };
   if (o.tipo === "prestamo") return { ...base, clave: `prestamo:${o.prestamoId}`, cuota: `${o.numero}/${o.total}` };
+  if (o.tipo === "deuda") return { ...base, clave: `deuda:${o.deudaId}`, cuota: `${o.numero}/${o.total}` };
   if (o.tipo === "recurrente") return { ...base, nombre: mov.descripcion || base.nombre, clave: `recurrente:${o.recurrenteId}` };
   return { ...base, nombre: mov.descripcion || base.nombre, clave: mov.id };
+}
+
+/** "3/12" y "5/12" → "3, 5/12". */
+function juntarCuotas(a: string, b: string): string {
+  const [numerosA, total] = a.split("/");
+  const numeros = [...numerosA.split(", "), b.split("/")[0]].sort((x, y) => Number(x) - Number(y));
+  return `${numeros.join(", ")}/${total}`;
 }
 
 function efectosDe(mov: Movimiento, cuentas: Map<string, Cuenta>, desde: Mes): Efecto[] {
@@ -395,6 +405,8 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
         const previo = delGrupo.get(e.flujo.item.clave);
         delGrupo.set(e.flujo.item.clave, {
           ...e.flujo.item,
+          // Varias cuotas de lo mismo en el mes: "3, 4/12".
+          cuota: previo?.cuota && e.flujo.item.cuota ? juntarCuotas(previo.cuota, e.flujo.item.cuota) : e.flujo.item.cuota,
           monto: (previo?.monto ?? 0) + e.flujo.monto,
           certeza:
             previo && ORDEN_CERTEZA[previo.certeza] < ORDEN_CERTEZA[e.flujo.certeza] ? previo.certeza : e.flujo.certeza,
