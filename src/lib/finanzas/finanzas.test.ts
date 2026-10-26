@@ -6,7 +6,7 @@ import { calcularPrevision, categoriaResto } from "./prevision";
 import { confirmar, instanciarRecurrente } from "./recurrentes";
 import { estadoTarjeta, periodoDe } from "./estado-tarjeta";
 import { resumenDeFecha } from "./tarjeta";
-import type { Cuenta, Datos, Escenario, Movimiento, ObjetivoAhorro, PlanCuotas, Presupuesto, Recurrente } from "./tipos";
+import type { Cuenta, Datos, Deuda, Escenario, Movimiento, ObjetivoAhorro, PlanCuotas, Presupuesto, Recurrente } from "./tipos";
 
 const banco: Cuenta = { id: "banco", nombre: "Banco", tipo: "banco", disponibilidad: "inmediata", saldoInicial: 0 };
 const ahorro: Cuenta = { id: "ahorro", nombre: "Ahorro", tipo: "banco", disponibilidad: "reserva", saldoInicial: 0 };
@@ -687,5 +687,63 @@ describe("objetivos de ahorro", () => {
     const [nov, dic] = calcularPrevision(conAhorro(ahorroMensual), { desde: "2026-11", meses: 2, mesActual: "2026-12" });
     expect(nov.objetivos[0].previsto).toBe(0);
     expect(dic.objetivos[0].previsto).toBe(100_000_00);
+  });
+});
+
+describe("deudas que se reorganizan", () => {
+  const patente: Deuda = {
+    id: "patente",
+    descripcion: "Patente",
+    categoria: "Automóvil",
+    cuentaId: "banco",
+    diaDelMes: 10,
+    cuotas: [
+      { numero: 1, monto: 21_253_00, mes: "2026-11" },
+      { numero: 2, monto: 21_253_00, mes: "2026-12" },
+      { numero: 3, monto: 21_253_00, mes: "2026-12" },
+      { numero: 4, monto: 21_253_00, mes: "2027-02" },
+    ],
+  };
+  const conDeuda = (deuda: Deuda, movimientos: Movimiento[] = []): Datos => ({
+    ...vacio(),
+    cuentas: [{ ...banco, saldoInicial: 500_000_00 }, ahorro, visa],
+    movimientos,
+    deudas: [deuda],
+  });
+
+  it("cada cuota se prevé en el mes elegido, y en un mes puede haber varias", () => {
+    const [nov, dic, ene, feb] = calcularPrevision(conDeuda(patente), { desde: "2026-11", meses: 4 });
+    expect([nov.egresos, dic.egresos, ene.egresos, feb.egresos]).toEqual([21_253_00, 42_506_00, 0, 21_253_00]);
+    expect(dic.detalle["egreso:Automóvil"]).toEqual([
+      expect.objectContaining({ nombre: "Patente", cuota: "2, 3/4", monto: 42_506_00, clave: "deuda:patente" }),
+    ]);
+    expect(nov.deudaCuotas).toBe(63_759_00);
+    expect(dic.disponible).toBe(500_000_00 - 63_759_00);
+  });
+
+  it("la cuota pagada reemplaza a la planificada, aunque se pague otro mes y por otro monto", () => {
+    const pago: Movimiento = {
+      id: "pago",
+      fecha: "2026-11-15",
+      descripcion: "Patente (4/4)",
+      tipo: "egreso",
+      monto: 20_000_00,
+      cuentaId: "banco",
+      categoria: "Automóvil",
+      estado: "real",
+      origen: { tipo: "deuda", deudaId: "patente", numero: 4, total: 4 },
+    };
+    const [nov, , , feb] = calcularPrevision(conDeuda(patente, [pago]), { desde: "2026-11", meses: 4 });
+    expect(nov.egresos).toBe(41_253_00);
+    expect(feb.egresos).toBe(0);
+    const [real] = calcularPrevision(conDeuda(patente, [pago]), { desde: "2026-11", meses: 1, estados: ["real"] });
+    expect(real.egresos).toBe(20_000_00);
+  });
+
+  it("con tarjeta, cuenta como gasto del mes del resumen y se paga al mes siguiente", () => {
+    const [nov, dic] = calcularPrevision(conDeuda({ ...patente, cuentaId: "visa" }), { desde: "2026-11", meses: 2 });
+    expect(nov.egresos).toBe(21_253_00);
+    expect(nov.consumoTarjetas).toBe(21_253_00);
+    expect(dic.venceTarjetas).toBe(21_253_00);
   });
 });

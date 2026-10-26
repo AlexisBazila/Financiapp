@@ -69,7 +69,8 @@ export type Origen =
   | { tipo: "manual" }
   | { tipo: "cuotas"; planId: string; numero: number; total: number }
   | { tipo: "prestamo"; prestamoId: string; numero: number; total: number }
-  | { tipo: "recurrente"; recurrenteId: string; mes: Mes };
+  | { tipo: "recurrente"; recurrenteId: string; mes: Mes }
+  | { tipo: "deuda"; deudaId: string; numero: number; total: number };
 
 export interface Movimiento {
   id: string;
@@ -183,6 +184,31 @@ export interface ObjetivoAhorro {
   hasta?: Mes;
 }
 
+export interface CuotaDeuda {
+  numero: number;
+  monto: Centavos;
+  /** Mes en el que se planea pagarla; se puede mover y juntar varias en un mismo mes. */
+  mes: Mes;
+}
+
+/**
+ * Una deuda en cuotas que se pagan cuando conviene (por ejemplo la patente atrasada): cada cuota tiene el
+ * mes en que se planea pagar, y en un mes puede haber varias. Al pagarla queda un movimiento real con su
+ * origen, que reemplaza a la cuota planificada.
+ */
+export interface Deuda {
+  id: string;
+  descripcion: string;
+  categoria: string;
+  categoriaId?: string;
+  contraparte?: string;
+  /** Cuenta con la que se paga. Si es una tarjeta, la cuota cuenta en el resumen que cierra en su mes. */
+  cuentaId: string;
+  /** Día del mes en que se planea pagar. */
+  diaDelMes: number;
+  cuotas: CuotaDeuda[];
+}
+
 /** Todo lo que el usuario carga. Los escenarios modifican una copia de esto. */
 export interface Datos {
   cuentas: Cuenta[];
@@ -192,6 +218,7 @@ export interface Datos {
   recurrentes: Recurrente[];
   presupuestos?: Presupuesto[];
   objetivos?: ObjetivoAhorro[];
+  deudas?: Deuda[];
 }
 
 type Coleccion = "movimientos" | "planesCuotas" | "prestamos" | "recurrentes";
