@@ -1,10 +1,10 @@
 import Link from "next/link";
 import { cargarHogar } from "@/lib/datos/cargar";
 import { estadoTarjeta, periodoDe } from "@/lib/finanzas/estado-tarjeta";
-import { hoy, sumarMeses } from "@/lib/finanzas/fechas";
-import { disponibilidadDe } from "@/lib/finanzas/prevision";
+import { hoy, mesDe, mesesEntre, nombreMes, sumarMeses } from "@/lib/finanzas/fechas";
+import { calcularPrevision, disponibilidadDe } from "@/lib/finanzas/prevision";
 import { resumenDeFecha } from "@/lib/finanzas/tarjeta";
-import type { Cuenta } from "@/lib/finanzas/tipos";
+import type { Cuenta, Movimiento } from "@/lib/finanzas/tipos";
 import { requerirUsuario } from "@/lib/supabase/servidor";
 import { caja, textoSuave } from "../../estilos";
 import { pesosExactos } from "../../formato";
@@ -19,24 +19,94 @@ import {
 } from "./formularios";
 import { diaMes, TotalesTarjeta } from "./totales-tarjeta";
 
-/** Saldo inicial en la moneda de la cuenta: verde si hay plata, rojo y negativo si es deuda. */
-function Saldo({ cuenta }: { cuenta: Cuenta }) {
-  // En una tarjeta el saldo es lo que se debe.
-  const valor = cuenta.tarjeta ? -cuenta.saldoInicial : cuenta.saldoInicial;
-  const color = valor > 0 ? "text-green-700 dark:text-green-400" : valor < 0 ? "text-red-600 dark:text-red-400" : "";
+const verde = "text-green-700 dark:text-green-400";
+const rojo = "text-red-600 dark:text-red-400";
+
+/** "$ 1.234,00", "−US$ 5,00" */
+function monto(valor: number, moneda?: string) {
+  return `${valor < 0 ? "−" : ""}${simbolo(moneda)} ${pesosExactos(Math.abs(valor))}`;
+}
+
+/** Saldo real de hoy (lo confirmado), en verde si hay plata y en rojo si es deuda; abajo, cómo cierra el mes con lo planificado. */
+function Saldo({ cuenta, real, plan, mes }: { cuenta: Cuenta; real: number; plan: number; mes: string }) {
   return (
-    <span className="flex flex-col items-end" title={cuenta.tarjeta ? "Resumen a pagar al inicio" : "Saldo al inicio"}>
-      <span className={`font-medium tabular-nums ${color}`}>
-        {valor < 0 ? "−" : ""}
-        {simbolo(cuenta.moneda)} {pesosExactos(Math.abs(valor))}
+    <span className="flex flex-col items-end" title="Saldo inicial más lo confirmado hasta hoy">
+      <span className={`text-lg font-semibold tabular-nums ${real > 0 ? verde : real < 0 ? rojo : ""}`}>
+        {monto(real, cuenta.moneda)}
       </span>
       {cuenta.moneda && cuenta.cambio && (
         <span className={`text-xs tabular-nums ${textoSuave}`}>
-          ≈ $ {pesosExactos(Math.round(Math.abs(valor) * cuenta.cambio))}
+          ≈ $ {pesosExactos(Math.round(Math.abs(real) * cuenta.cambio))}
+        </span>
+      )}
+      {plan !== real && (
+        <span className={`text-xs tabular-nums ${textoSuave}`}>
+          al cierre de {nombreMes(mes)} con lo planificado: {monto(plan, cuenta.moneda)}
         </span>
       )}
     </span>
   );
+}
+
+/** Lo que entró y salió de la cuenta en el mes (lo confirmado), con una barra que compara las dos cosas. */
+function BalanceDelMes({
+  entradas,
+  salidas,
+  moneda,
+  mes,
+}: {
+  entradas: number;
+  salidas: number;
+  moneda?: string;
+  mes: string;
+}) {
+  const balance = entradas - salidas;
+  const mayor = Math.max(entradas, salidas, 1);
+  return (
+    <div className="flex flex-col gap-1 text-sm">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4">
+        <span className={textoSuave}>Balance de {nombreMes(mes)}</span>
+        <span className="tabular-nums">
+          <span className={verde}>+{monto(entradas, moneda)}</span>{" "}
+          <span className={rojo}>−{monto(salidas, moneda)}</span> ={" "}
+          <strong className={balance > 0 ? verde : balance < 0 ? rojo : ""}>
+            {balance > 0 ? "+" : ""}
+            {monto(balance, moneda)}
+          </strong>
+        </span>
+      </div>
+      <div
+        className="grid gap-0.5"
+        role="img"
+        aria-label={`Entró ${monto(entradas, moneda)} y salió ${monto(salidas, moneda)}`}
+      >
+        <div className="h-1.5 rounded-full bg-green-600" style={{ width: `${(entradas / mayor) * 100}%` }} />
+        <div className="h-1.5 rounded-full bg-red-600" style={{ width: `${(salidas / mayor) * 100}%` }} />
+      </div>
+    </div>
+  );
+}
+
+/** Entradas y salidas confirmadas de cada cuenta (no tarjeta) en el mes, en la moneda de cada cuenta. */
+function movimientoDelMes(movimientos: Movimiento[], cuentas: Map<string, Cuenta>, mes: string) {
+  const resultado = new Map<string, { entradas: number; salidas: number }>();
+  const sumar = (id: string, campo: "entradas" | "salidas", valor: number) => {
+    const actual = resultado.get(id) ?? { entradas: 0, salidas: 0 };
+    actual[campo] += valor;
+    resultado.set(id, actual);
+  };
+  for (const m of movimientos) {
+    if (m.estado !== "real" || mesDe(m.fecha) !== mes) continue;
+    if (m.tipo === "ingreso") sumar(m.cuentaId, "entradas", m.monto);
+    else if (m.tipo === "egreso") sumar(m.cuentaId, "salidas", m.monto);
+    else if (m.cuentaDestinoId) {
+      sumar(m.cuentaId, "salidas", m.monto);
+      const origen = cuentas.get(m.cuentaId);
+      const destino = cuentas.get(m.cuentaDestinoId);
+      sumar(m.cuentaDestinoId, "entradas", Math.round((m.monto * (origen?.cambio ?? 1)) / (destino?.cambio ?? 1)));
+    }
+  }
+  return resultado;
 }
 
 /** Orden y título de cada grupo de la pantalla. */
@@ -65,6 +135,36 @@ export default async function Cuentas() {
   const cuentasPago = activas.filter((c) => !c.tarjeta).map((c) => ({ id: c.id, nombre: c.nombre }));
   const titulares = [...new Set(datos.cuentas.map((c) => c.titular).filter((t): t is string => Boolean(t)))].sort();
   const fecha = hoy();
+  const mesActual = mesDe(fecha);
+  const cuentasPorId = new Map(datos.cuentas.map((c) => [c.id, c]));
+  // Desde los saldos iniciales hasta el mes actual: solo lo confirmado (real) y con lo planificado (plan).
+  const opciones = {
+    desde: hogar.mesInicio,
+    meses: Math.max(1, mesesEntre(hogar.mesInicio, mesActual) + 1),
+    mesActual,
+    hoy: fecha,
+  };
+  const real = calcularPrevision(datos, { ...opciones, estados: ["real"] }).at(-1)!;
+  const plan = calcularPrevision(datos, opciones).at(-1)!;
+  const delMes = movimientoDelMes(datos.movimientos, cuentasPorId, mesActual);
+  // La deuda de las tarjetas, como en cada tarjeta: resúmenes sin pagar más el período en curso.
+  const deudaTarjetas = activas
+    .filter((c) => c.tarjeta)
+    .reduce(
+      (s, c) => s + Math.round(estadoTarjeta(datos, c.id, fecha, hogar.mesInicio).deudaTotal * (c.cambio ?? 1)),
+      0,
+    );
+  const totales = [
+    {
+      titulo: "Total",
+      valor: real.disponible + real.disponible48h + real.reserva - deudaTarjetas,
+      nota: "lo que tenés menos lo que debés de tarjetas",
+    },
+    { titulo: "Disponible", valor: real.disponible, nota: "para gastar ya" },
+    { titulo: "No inmediato", valor: real.disponible48h, nota: "FCI, dólares, plazo fijo" },
+    { titulo: "Reserva", valor: real.reserva, nota: "ahorro apartado" },
+    { titulo: "Deuda tarjetas", valor: -deudaTarjetas, nota: "resúmenes sin pagar + período en curso" },
+  ];
 
   return (
     <div className="flex flex-col gap-8">
@@ -73,9 +173,27 @@ export default async function Cuentas() {
       <section className={`${caja} p-5`}>
         <FormularioMesInicio hogarId={hogar.id} mesInicio={hogar.mesInicio} />
         <p className={`mt-2 text-sm ${textoSuave}`}>
-          La previsión parte de los saldos que cargues acá para ese mes. Los movimientos anteriores no se cuentan.
+          La previsión parte de los saldos iniciales que cargues en cada cuenta (en Editar) para ese mes. Los
+          movimientos anteriores no se cuentan.
         </p>
       </section>
+
+      {activas.length > 0 && (
+        <section>
+          <h2 className={`mb-3 text-sm ${textoSuave}`}>Saldos reales hoy: saldo inicial más todo lo confirmado</h2>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+            {totales.map((t, i) => (
+              <div key={t.titulo} className={`${caja} p-4 ${i === 0 ? "col-span-2 sm:col-span-1" : ""}`}>
+                <div className={`text-sm ${textoSuave}`}>{t.titulo}</div>
+                <div className={`text-xl font-semibold tabular-nums ${t.valor > 0 ? verde : t.valor < 0 ? rojo : ""}`}>
+                  {monto(t.valor)}
+                </div>
+                <div className={`text-xs ${textoSuave}`}>{t.nota}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {activas.length === 0 && <p className={textoSuave}>Todavía no cargaste cuentas.</p>}
       {GRUPOS.map(([tipo, titulo]) => {
@@ -107,13 +225,21 @@ export default async function Cuentas() {
                     </div>
                   </div>
                   <div className="flex items-center gap-4">
-                    {!c.tarjeta && <Saldo cuenta={c} />}
+                    {!c.tarjeta && (
+                      <Saldo cuenta={c} real={real.saldos[c.id] ?? 0} plan={plan.saldos[c.id] ?? 0} mes={mesActual} />
+                    )}
                     <BotonArchivar id={c.id} />
                   </div>
                 </div>
-                {c.tarjeta && (
-                  <TotalesTarjeta estado={estadoTarjeta(datos, c.id, fecha, hogar.mesInicio)} compacto />
+                {!c.tarjeta && (
+                  <BalanceDelMes
+                    entradas={delMes.get(c.id)?.entradas ?? 0}
+                    salidas={delMes.get(c.id)?.salidas ?? 0}
+                    moneda={c.moneda}
+                    mes={mesActual}
+                  />
                 )}
+                {c.tarjeta && <TotalesTarjeta estado={estadoTarjeta(datos, c.id, fecha, hogar.mesInicio)} compacto />}
                 <details className="text-sm">
                   <summary className={`cursor-pointer ${textoSuave}`}>Editar</summary>
                   <div className="mt-3">
@@ -122,7 +248,9 @@ export default async function Cuentas() {
                 </details>
                 {c.tarjeta && (
                   <details className="text-sm">
-                    <summary className={`cursor-pointer ${textoSuave}`}>Fechas de cierre y vencimiento de cada mes</summary>
+                    <summary className={`cursor-pointer ${textoSuave}`}>
+                      Fechas de cierre y vencimiento de cada mes
+                    </summary>
                     <div className="mt-3 flex flex-col gap-4">
                       <p className={textoSuave}>
                         El cierre cambia mes a mes: confirmá las fechas de cada resumen cuando las sepas (están en el
@@ -137,7 +265,8 @@ export default async function Cuentas() {
                               {tituloMes(periodo.mes)}
                               <span className={`ml-2 font-normal ${textoSuave}`}>
                                 del {diaMes(periodo.desde)} al {diaMes(periodo.cierre)} · vence el{" "}
-                                {diaMes(periodo.vencimiento)} · {periodo.cargado ? "confirmado" : "habitual, sin confirmar"}
+                                {diaMes(periodo.vencimiento)} ·{" "}
+                                {periodo.cargado ? "confirmado" : "habitual, sin confirmar"}
                                 {n === 0 && " · en curso"}
                               </span>
                             </div>
@@ -165,8 +294,8 @@ export default async function Cuentas() {
           <div>
             <h2 className="text-lg font-semibold">Tipos de cambio</h2>
             <p className={`text-sm ${textoSuave}`}>
-              Las cuentas en otras monedas se suman en pesos con este valor. Podés cargarlo a mano o traer la
-              cotización de compra del día.
+              Las cuentas en otras monedas se suman en pesos con este valor. Podés cargarlo a mano o traer la cotización
+              de compra del día.
             </p>
           </div>
           {monedas.map((m) => {
