@@ -690,8 +690,9 @@ describe("objetivos de ahorro", () => {
   it("el resto de cada mes (lo que sobra o falta después de gastar y ahorrar) pasa al mes siguiente", () => {
     const datos = conAhorro(ahorroMensual, [sueldo("2026-11", 150_000_00), sueldo("2026-12", 50_000_00)]);
     const [nov, dic] = calcularPrevision(datos, { desde: "2026-11", meses: 2 });
-    expect(nov).toMatchObject({ sobranteAnterior: 0, resto: 50_000_00 });
-    expect(dic).toMatchObject({ sobranteAnterior: 50_000_00, resto: 0 });
+    // Arranca con lo que hay para gastar en el banco.
+    expect(nov).toMatchObject({ sobranteAnterior: 500_000_00, resto: 550_000_00 });
+    expect(dic).toMatchObject({ sobranteAnterior: 550_000_00, resto: 500_000_00 });
   });
 
   it("en los meses pasados no prevé lo que no se transfirió", () => {
@@ -854,5 +855,22 @@ describe("saldo inicial con fecha", () => {
     expect(oct.egresos).toBe(31_083_33);
     expect(oct.saldos.banco).toBe(28_138_39);
     expect(nov.saldos.banco).toBe(28_138_39 - 28_812_50);
+  });
+
+  it("el resto arranca con la plata del comienzo del mes y la tarjeta resta cuando vence", () => {
+    const sueldo: Movimiento = { ...cuota("s", "2026-11-01", 2_261_076_00), tipo: "ingreso", categoria: "Sueldo" };
+    const compra: Movimiento = { ...cuota("v", "2026-10-10", 2_000_000_00), cuentaId: "visa", categoria: "Otros" };
+    const datos: Datos = {
+      ...vacio(),
+      cuentas: [{ ...banco, saldoInicial: 29_138_39, saldoFecha: "2026-10-26" }, ahorro, visa],
+      movimientos: [cuota("a", "2026-10-01", 30_083_33), compra, sueldo],
+    };
+    const [oct, nov] = calcularPrevision(datos, { desde: "2026-10", meses: 2 });
+    // Al 1/10 había lo de hoy más la cuota que ya salió.
+    expect(oct.sobranteAnterior).toBe(59_221_72);
+    expect(oct.egresos).toBe(2_030_083_33);
+    expect(oct).toMatchObject({ ajusteTarjetas: 2_000_000_00, resto: 29_138_39 });
+    expect(nov).toMatchObject({ sobranteAnterior: 29_138_39, ajusteTarjetas: -2_000_000_00 });
+    expect(nov.resto).toBe(29_138_39 + 2_261_076_00 - 2_000_000_00);
   });
 });

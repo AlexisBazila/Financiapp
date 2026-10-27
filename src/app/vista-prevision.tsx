@@ -461,6 +461,13 @@ function Grilla({
               total,
               signo,
             )}
+            {prevision.some((m) => m.ajusteTarjetas) &&
+              fila(
+                "± Tarjeta: consumo que se paga el mes siguiente − resumen que vence",
+                (m: MesPrevision) => m.ajusteTarjetas,
+                "text-xs",
+                signo,
+              )}
             {objetivos.length > 0 && (
               <>
                 {separador("Ahorro e inversión")}
@@ -489,7 +496,7 @@ function Grilla({
               <th scope="row" className={`${primera} py-2.5`}>
                 <div className="text-base font-bold">Resto</div>
                 <div className="text-xs font-normal text-black/50 dark:text-white/50">
-                  sobrante anterior + resultado − ahorro · pasa al mes siguiente
+                  sobrante anterior + resultado ± tarjeta − ahorro · pasa al mes siguiente
                 </div>
               </th>
               {prevision.map((m, i) => (
