@@ -1,23 +1,20 @@
 import Link from "next/link";
 import { cargarHogar } from "@/lib/datos/cargar";
-import { estadoTarjeta, periodoDe } from "@/lib/finanzas/estado-tarjeta";
-import { hoy, mesDe, mesesEntre, nombreMes, sumarMeses } from "@/lib/finanzas/fechas";
+import { estadoTarjeta } from "@/lib/finanzas/estado-tarjeta";
+import { hoy, mesDe, mesesEntre, nombreMes } from "@/lib/finanzas/fechas";
 import { calcularPrevision, disponibilidadDe } from "@/lib/finanzas/prevision";
-import { resumenDeFecha } from "@/lib/finanzas/tarjeta";
 import type { Cuenta, Movimiento } from "@/lib/finanzas/tipos";
 import { requerirUsuario } from "@/lib/supabase/servidor";
 import { caja, textoSuave } from "../../estilos";
 import { pesosExactos } from "../../formato";
 import { simbolo } from "@/lib/datos/monedas";
-import { tituloMes } from "../movimientos/lista";
 import {
   BotonArchivar,
-  FormularioCiclo,
   FormularioCotizacion,
   FormularioCuenta,
   FormularioMesInicio,
 } from "./formularios";
-import { diaMes, TotalesTarjeta } from "./totales-tarjeta";
+import { Ayuda, TOTALIZADORES } from "../../totalizadores";
 
 const verde = "text-green-700 dark:text-green-400";
 const rojo = "text-red-600 dark:text-red-400";
@@ -115,7 +112,6 @@ const GRUPOS: [Cuenta["tipo"], string][] = [
   ["billetera", "📱 Billeteras virtuales"],
   ["efectivo", "💵 Efectivo"],
   ["inversion", "📈 Inversiones"],
-  ["tarjeta", "💳 Tarjetas de crédito"],
 ];
 
 const DISPONIBILIDAD: Record<string, string> = {
@@ -124,15 +120,11 @@ const DISPONIBILIDAD: Record<string, string> = {
   reserva: "Reserva de ahorro",
 };
 
-/** Períodos que se muestran para revisar sus fechas: el anterior, el actual y los dos siguientes. */
-const PERIODOS = [-1, 0, 1, 2];
-
 export default async function Cuentas() {
   const { supabase } = await requerirUsuario();
   const { hogar, datos, cuentasActivas, cotizaciones } = await cargarHogar(supabase);
   const activas = datos.cuentas.filter((c) => cuentasActivas.includes(c.id));
   const monedas = [...new Set(activas.flatMap((c) => (c.moneda ? [c.moneda] : [])))];
-  const cuentasPago = activas.filter((c) => !c.tarjeta).map((c) => ({ id: c.id, nombre: c.nombre }));
   const titulares = [...new Set(datos.cuentas.map((c) => c.titular).filter((t): t is string => Boolean(t)))].sort();
   const fecha = hoy();
   const mesActual = mesDe(fecha);
@@ -148,22 +140,20 @@ export default async function Cuentas() {
   const plan = calcularPrevision(datos, opciones).at(-1)!;
   const delMes = movimientoDelMes(datos.movimientos, cuentasPorId, mesActual);
   // La deuda de las tarjetas, como en cada tarjeta: resúmenes sin pagar más el período en curso.
-  const deudaTarjetas = activas
-    .filter((c) => c.tarjeta)
-    .reduce(
-      (s, c) => s + Math.round(estadoTarjeta(datos, c.id, fecha, hogar.mesInicio).deudaTotal * (c.cambio ?? 1)),
-      0,
-    );
+  const estados = activas.filter((c) => c.tarjeta).map((c) => estadoTarjeta(datos, c.id, fecha, hogar.mesInicio));
+  const deudaTarjetas = estados.reduce((s, e) => s + e.deudaTotal, 0);
+  // Cuotas que faltan: las de tarjeta de resúmenes posteriores al período en curso, y las demás desde el mes que viene.
+  const deudaCuotas = estados.reduce((s, e) => s + e.cuotasFuturas, 0) + real.cuotasFuturasSinTarjeta;
   const totales = [
     {
-      titulo: "Total",
-      valor: real.disponible + real.disponible48h + real.reserva - deudaTarjetas,
-      nota: "lo que tenés menos lo que debés de tarjetas",
+      ...TOTALIZADORES.patrimonio,
+      valor: real.disponible + real.disponible48h + real.reserva - deudaTarjetas - deudaCuotas,
     },
-    { titulo: "Disponible", valor: real.disponible, nota: "para gastar ya" },
-    { titulo: "No inmediato", valor: real.disponible48h, nota: "FCI, dólares, plazo fijo" },
-    { titulo: "Reserva", valor: real.reserva, nota: "ahorro apartado" },
-    { titulo: "Deuda tarjetas", valor: -deudaTarjetas, nota: "resúmenes sin pagar + período en curso" },
+    { ...TOTALIZADORES.disponible, valor: real.disponible },
+    { ...TOTALIZADORES.noInmediato, valor: real.disponible48h },
+    { ...TOTALIZADORES.reserva, valor: real.reserva },
+    { ...TOTALIZADORES.deudaTarjetas, valor: -deudaTarjetas, nota: "resúmenes sin pagar + período en curso" },
+    { ...TOTALIZADORES.deudaCuotas, valor: -deudaCuotas, nota: "lo que falta de cuotas" },
   ];
 
   return (
@@ -181,10 +171,13 @@ export default async function Cuentas() {
       {activas.length > 0 && (
         <section>
           <h2 className={`mb-3 text-sm ${textoSuave}`}>Saldos reales hoy: saldo inicial más todo lo confirmado</h2>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-            {totales.map((t, i) => (
-              <div key={t.titulo} className={`${caja} p-4 ${i === 0 ? "col-span-2 sm:col-span-1" : ""}`}>
-                <div className={`text-sm ${textoSuave}`}>{t.titulo}</div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            {totales.map((t) => (
+              <div key={t.titulo} className={`${caja} p-4`} title={t.ayuda}>
+                <div className={`flex items-center gap-1 text-sm ${textoSuave}`}>
+                  {t.titulo}
+                  <Ayuda texto={t.ayuda} />
+                </div>
                 <div className={`text-xl font-semibold tabular-nums ${t.valor > 0 ? verde : t.valor < 0 ? rojo : ""}`}>
                   {monto(t.valor)}
                 </div>
@@ -196,6 +189,13 @@ export default async function Cuentas() {
       )}
 
       {activas.length === 0 && <p className={textoSuave}>Todavía no cargaste cuentas.</p>}
+      <p className={`text-sm ${textoSuave}`}>
+        Las tarjetas de crédito tienen su propia sección:{" "}
+        <Link href="/tarjetas" className="underline">
+          Tarjetas
+        </Link>
+        .
+      </p>
       {GRUPOS.map(([tipo, titulo]) => {
         const delTipo = activas.filter((c) => c.tipo === tipo);
         if (delTipo.length === 0) return null;
@@ -217,72 +217,27 @@ export default async function Cuentas() {
                       )}
                     </div>
                     <div className={`text-sm ${textoSuave}`}>
-                      {c.tarjeta
-                        ? `Cierra el ${c.tarjeta.diaCierre}, vence el ${c.tarjeta.diaVencimiento} · ${
-                            c.tarjeta.pagoAutomatico === false ? "pago a mano" : "pago automático"
-                          }`
-                        : `${DISPONIBILIDAD[disponibilidadDe(c)]}${c.moneda ? " (hay que cambiarla)" : ""}`}
+                      {DISPONIBILIDAD[disponibilidadDe(c)]}
+                      {c.moneda ? " (hay que cambiarla)" : ""}
                     </div>
                   </div>
                   <div className="flex items-center gap-4">
-                    {!c.tarjeta && (
-                      <Saldo cuenta={c} real={real.saldos[c.id] ?? 0} plan={plan.saldos[c.id] ?? 0} mes={mesActual} />
-                    )}
+                    <Saldo cuenta={c} real={real.saldos[c.id] ?? 0} plan={plan.saldos[c.id] ?? 0} mes={mesActual} />
                     <BotonArchivar id={c.id} />
                   </div>
                 </div>
-                {!c.tarjeta && (
-                  <BalanceDelMes
-                    entradas={delMes.get(c.id)?.entradas ?? 0}
-                    salidas={delMes.get(c.id)?.salidas ?? 0}
-                    moneda={c.moneda}
-                    mes={mesActual}
-                  />
-                )}
-                {c.tarjeta && <TotalesTarjeta estado={estadoTarjeta(datos, c.id, fecha, hogar.mesInicio)} compacto />}
+                <BalanceDelMes
+                  entradas={delMes.get(c.id)?.entradas ?? 0}
+                  salidas={delMes.get(c.id)?.salidas ?? 0}
+                  moneda={c.moneda}
+                  mes={mesActual}
+                />
                 <details className="text-sm">
                   <summary className={`cursor-pointer ${textoSuave}`}>Editar</summary>
                   <div className="mt-3">
-                    <FormularioCuenta cuentasPago={cuentasPago} titulares={titulares} inicial={c} />
+                    <FormularioCuenta titulares={titulares} inicial={c} />
                   </div>
                 </details>
-                {c.tarjeta && (
-                  <details className="text-sm">
-                    <summary className={`cursor-pointer ${textoSuave}`}>
-                      Fechas de cierre y vencimiento de cada mes
-                    </summary>
-                    <div className="mt-3 flex flex-col gap-4">
-                      <p className={textoSuave}>
-                        El cierre cambia mes a mes: confirmá las fechas de cada resumen cuando las sepas (están en el
-                        resumen anterior o en la app del banco). Cada período empieza el día después del cierre
-                        anterior. Los meses sin confirmar usan el día de cierre y vencimiento habituales.
-                      </p>
-                      {PERIODOS.map((n) => {
-                        const periodo = periodoDe(c, sumarMeses(resumenDeFecha(c, fecha), n));
-                        return (
-                          <div key={periodo.mes} className="flex flex-col gap-2">
-                            <div className="font-medium">
-                              {tituloMes(periodo.mes)}
-                              <span className={`ml-2 font-normal ${textoSuave}`}>
-                                del {diaMes(periodo.desde)} al {diaMes(periodo.cierre)} · vence el{" "}
-                                {diaMes(periodo.vencimiento)} ·{" "}
-                                {periodo.cargado ? "confirmado" : "habitual, sin confirmar"}
-                                {n === 0 && " · en curso"}
-                              </span>
-                            </div>
-                            <FormularioCiclo
-                              key={`${periodo.cierre}-${periodo.vencimiento}`}
-                              cuentaId={c.id}
-                              mes={periodo.mes}
-                              cierre={periodo.cierre}
-                              vencimiento={periodo.vencimiento}
-                            />
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </details>
-                )}
               </div>
             ))}
           </section>
@@ -322,7 +277,7 @@ export default async function Cuentas() {
 
       <section className={`${caja} p-5`}>
         <h2 className="mb-4 text-lg font-semibold">Agregar cuenta</h2>
-        <FormularioCuenta cuentasPago={cuentasPago} titulares={titulares} />
+        <FormularioCuenta titulares={titulares} />
       </section>
     </div>
   );
