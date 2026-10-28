@@ -138,7 +138,7 @@ export function FormularioPresupuesto({
         />
       </label>
       <label className={etiqueta}>
-        Lo que resta sale de
+        Se paga con (lo que resta sale de acá)
         <select name="cuenta_id" required defaultValue={inicial?.cuentaId} className={campo}>
           {cuentas.map((c) => (
             <option key={c.id} value={c.id}>
@@ -146,6 +146,9 @@ export function FormularioPresupuesto({
             </option>
           ))}
         </select>
+        <span className="text-xs font-normal opacity-70">
+          Con una tarjeta 💳, el presupuesto es gasto del mes pero la plata sale el mes siguiente, con el resumen.
+        </span>
       </label>
       <label className={etiqueta}>
         {repite ? "Desde" : "Mes"}

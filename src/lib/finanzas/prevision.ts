@@ -63,13 +63,34 @@ export interface DetalleItem {
 
 export interface MesPrevision {
   mes: Mes;
+  /** Lo que entra a las cuentas (las devoluciones en una tarjeta bajan su consumo, no son ingresos). */
   ingresos: Centavos;
+  /** Todo el gasto del mes: de las cuentas y con tarjeta. */
   egresos: Centavos;
   /** ingresos - egresos del mes. */
   neto: Centavos;
   ingresosPorCategoria: Record<string, Centavos>;
   egresosPorCategoria: Record<string, Centavos>;
-  /** Certeza de cada monto por categoría; clave `ingreso:categoría` o `egreso:categoría`. */
+  /** Gastos que salen de las cuentas (débito, efectivo, transferencias), por categoría. */
+  cuentasPorCategoria: Record<string, Centavos>;
+  egresosCuentas: Centavos;
+  /** Lo comprado con tarjeta en el período que cierra en el mes (menos devoluciones), por categoría. */
+  tarjetaPorCategoria: Record<string, Centavos>;
+  /**
+   * Plata que sale en el mes: los gastos de las cuentas más el resumen de tarjeta que vence. Lo comprado con
+   * tarjeta en el mes sale recién el mes siguiente.
+   */
+  gastosDelMes: Centavos;
+  /** ingresos - gastos del mes. */
+  resultado: Centavos;
+  /**
+   * Lo que falta pagar en cuotas (compras, préstamos, deudas) de los meses siguientes, sin las que ya están
+   * en un resumen cerrado (esas ya son deuda de la tarjeta).
+   */
+  cuotasFuturas: Centavos;
+  /** Las de `cuotasFuturas` que no son de tarjeta (préstamos, deudas, cuotas en una cuenta). */
+  cuotasFuturasSinTarjeta: Centavos;
+  /** Certeza de cada monto por categoría; clave `ingreso:categoría`, `egreso:categoría` o `tarjeta:categoría`. */
   celdas: Record<string, Celda>;
   /** Qué compone cada monto por categoría, con la misma clave que `celdas`. */
   detalle: Record<string, DetalleItem[]>;
@@ -112,12 +133,7 @@ export interface MesPrevision {
    * mes, la plata disponible para gastar al comienzo del mes.
    */
   sobranteAnterior: Centavos;
-  /**
-   * Lo que las tarjetas corren el resto: el consumo del mes (que ya está en egresos) se paga recién el mes
-   * siguiente, y lo que vence en el mes sí sale ahora.
-   */
-  ajusteTarjetas: Centavos;
-  /** sobrante anterior + ingresos - egresos + ajuste de tarjetas - ahorro del mes. Pasa al mes siguiente. */
+  /** sobrante anterior + resultado - ahorro del mes. Pasa al mes siguiente. */
   resto: Centavos;
 }
 
@@ -214,6 +230,8 @@ interface Efecto {
     monto: Centavos;
     certeza: Certeza;
     cuota: boolean;
+    /** Si es con tarjeta: se paga el mes siguiente. */
+    tarjeta?: boolean;
     item?: Omit<DetalleItem, "monto" | "certeza">;
   };
 }
@@ -314,7 +332,7 @@ function efectosDe(mov: Movimiento, cuentas: Map<string, Cuenta>, desde: Mes): E
       cuentaId: cuenta.id,
       delta: -signo * mov.monto,
       consumo: -signo * mov.monto,
-      flujo: { tipo: mov.tipo, categoria, monto: enPesos, certeza, cuota, item },
+      flujo: { tipo: mov.tipo, categoria, monto: enPesos, certeza, cuota, item, tarjeta: true },
     },
     { mes: mesDe(ciclo.vencimiento), cuentaId: cuenta.id, delta: 0, vence: -signo * mov.monto },
   ];
@@ -384,6 +402,12 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
       cuotasPorMes.set(mes, (cuotasPorMes.get(mes) ?? 0) + m.monto);
     }
   }
+  // Y por mes de gasto: las de tarjeta pasan a ser deuda de la tarjeta cuando cierra su resumen.
+  const cuotasPorMesDeGasto: { mes: Mes; monto: Centavos; tarjeta: boolean }[] = todos
+    .filter((m) => claveCuota(m.origen) && m.tipo === "egreso")
+    .map((m) => ({ mes: mesDeGasto(m, cuentas), monto: m.monto, tarjeta: Boolean(cuentas.get(m.cuentaId)?.tarjeta) }));
+  const cuotasGastoDespuesDe = (mes: Mes, sinTarjeta = false) =>
+    cuotasPorMesDeGasto.reduce((total, c) => (c.mes > mes && !(sinTarjeta && c.tarjeta) ? total + c.monto : total), 0);
   const cuotasDespuesDe = (mes: Mes) =>
     [...cuotasPorMes].reduce((total, [m, monto]) => (m > mes ? total + monto : total), 0);
 
@@ -404,6 +428,9 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
   return meses.map((mes) => {
     const ingresosPorCategoria: Record<string, Centavos> = {};
     const egresosPorCategoria: Record<string, Centavos> = {};
+    const cuentasPorCategoria: Record<string, Centavos> = {};
+    const tarjetaPorCategoria: Record<string, Centavos> = {};
+    let egresosCuentas = 0;
     const celdas: Record<string, Celda> = {};
     const items = new Map<string, Map<string, DetalleItem>>();
     let ingresos = 0;
@@ -424,7 +451,9 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
         pagadoAMano.add(e.cuentaId);
       }
       if (!e.flujo) continue;
-      const clave = `${e.flujo.tipo}:${e.flujo.categoria}`;
+      const clave = `${e.flujo.tarjeta ? "tarjeta" : e.flujo.tipo}:${e.flujo.categoria}`;
+      // En una tarjeta, una devolución resta del consumo.
+      const monto = e.flujo.tarjeta && e.flujo.tipo === "ingreso" ? -e.flujo.monto : e.flujo.monto;
       const previa = celdas[clave];
       celdas[clave] = {
         certeza:
@@ -439,17 +468,25 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
           ...e.flujo.item,
           // Varias cuotas de lo mismo en el mes: "3, 4/12".
           cuota: previo?.cuota && e.flujo.item.cuota ? juntarCuotas(previo.cuota, e.flujo.item.cuota) : e.flujo.item.cuota,
-          monto: (previo?.monto ?? 0) + e.flujo.monto,
+          monto: (previo?.monto ?? 0) + monto,
           certeza:
             previo && ORDEN_CERTEZA[previo.certeza] < ORDEN_CERTEZA[e.flujo.certeza] ? previo.certeza : e.flujo.certeza,
         });
       }
-      if (e.flujo.tipo === "ingreso") {
+      if (e.flujo.tarjeta) {
+        tarjetaPorCategoria[e.flujo.categoria] = (tarjetaPorCategoria[e.flujo.categoria] ?? 0) + monto;
+        if (e.flujo.tipo === "egreso") {
+          egresos += e.flujo.monto;
+          egresosPorCategoria[e.flujo.categoria] = (egresosPorCategoria[e.flujo.categoria] ?? 0) + e.flujo.monto;
+        }
+      } else if (e.flujo.tipo === "ingreso") {
         ingresos += e.flujo.monto;
         ingresosPorCategoria[e.flujo.categoria] = (ingresosPorCategoria[e.flujo.categoria] ?? 0) + e.flujo.monto;
       } else {
         egresos += e.flujo.monto;
+        egresosCuentas += e.flujo.monto;
         egresosPorCategoria[e.flujo.categoria] = (egresosPorCategoria[e.flujo.categoria] ?? 0) + e.flujo.monto;
+        cuentasPorCategoria[e.flujo.categoria] = (cuentasPorCategoria[e.flujo.categoria] ?? 0) + e.flujo.monto;
       }
     }
 
@@ -515,8 +552,8 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
 
     const sobranteAnterior = restoAnterior;
     // Las compras con tarjeta se cuentan como gasto el mes del cierre, pero la plata sale cuando vence.
-    const ajusteTarjetas = consumoTarjetas - venceTarjetas;
-    restoAnterior = sobranteAnterior + ingresos - egresos + ajusteTarjetas - ahorroDelMes;
+    const gastosDelMes = egresosCuentas + venceTarjetas;
+    restoAnterior = sobranteAnterior + ingresos - gastosDelMes - ahorroDelMes;
 
     let disponible = 0;
     let disponible48h = 0;
@@ -537,6 +574,13 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
       neto: ingresos - egresos,
       ingresosPorCategoria,
       egresosPorCategoria,
+      cuentasPorCategoria,
+      egresosCuentas,
+      tarjetaPorCategoria,
+      gastosDelMes,
+      resultado: ingresos - gastosDelMes,
+      cuotasFuturas: cuotasGastoDespuesDe(mes),
+      cuotasFuturasSinTarjeta: cuotasGastoDespuesDe(mes, true),
       celdas,
       detalle: Object.fromEntries(
         [...items].map(([clave, delGrupo]) => [clave, [...delGrupo.values()].sort((a, b) => b.monto - a.monto)]),
@@ -558,7 +602,6 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
       objetivos,
       ahorroDelMes,
       sobranteAnterior,
-      ajusteTarjetas,
       resto: restoAnterior,
     };
   });

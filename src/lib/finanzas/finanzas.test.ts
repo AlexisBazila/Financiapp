@@ -869,8 +869,82 @@ describe("saldo inicial con fecha", () => {
     // Al 1/10 había lo de hoy más la cuota que ya salió.
     expect(oct.sobranteAnterior).toBe(59_221_72);
     expect(oct.egresos).toBe(2_030_083_33);
-    expect(oct).toMatchObject({ ajusteTarjetas: 2_000_000_00, resto: 29_138_39 });
-    expect(nov).toMatchObject({ sobranteAnterior: 29_138_39, ajusteTarjetas: -2_000_000_00 });
+    expect(oct).toMatchObject({ egresosCuentas: 30_083_33, gastosDelMes: 30_083_33, resto: 29_138_39 });
+    expect(oct.tarjetaPorCategoria).toEqual({ Otros: 2_000_000_00 });
+    expect(nov).toMatchObject({ sobranteAnterior: 29_138_39, gastosDelMes: 2_000_000_00 });
     expect(nov.resto).toBe(29_138_39 + 2_261_076_00 - 2_000_000_00);
+  });
+});
+
+describe("gastos de las cuentas y con tarjeta, como la planilla", () => {
+  const mov = (id: string, fecha: string, monto: number, cuentaId: string, extra: Partial<Movimiento> = {}): Movimiento => ({
+    id,
+    fecha,
+    descripcion: id,
+    tipo: "egreso",
+    monto,
+    cuentaId,
+    categoria: "Varios",
+    estado: "planificado",
+    origen: { tipo: "manual" },
+    ...extra,
+  });
+
+  it("lo de tarjeta es del mes del cierre pero resta del resto el mes siguiente; una devolución baja el consumo", () => {
+    const datos: Datos = {
+      ...vacio(),
+      cuentas: [{ ...banco, saldoInicial: 100_000_00 }, ahorro, visa],
+      movimientos: [
+        mov("super", "2026-11-05", 50_000_00, "banco"),
+        mov("tv", "2026-11-10", 300_000_00, "visa"),
+        mov("devolucion", "2026-11-12", 20_000_00, "visa", { tipo: "ingreso" }),
+        mov("sueldo", "2026-12-01", 1_000_000_00, "banco", { tipo: "ingreso", categoria: "Sueldo" }),
+      ],
+    };
+    const [nov, dic] = calcularPrevision(datos, { desde: "2026-11", meses: 2 });
+    expect(nov).toMatchObject({ ingresos: 0, egresosCuentas: 50_000_00, gastosDelMes: 50_000_00, resto: 50_000_00 });
+    expect(nov.cuentasPorCategoria).toEqual({ Varios: 50_000_00 });
+    expect(nov.tarjetaPorCategoria).toEqual({ Varios: 280_000_00 });
+    expect(nov.consumoTarjetas).toBe(280_000_00);
+    expect(dic).toMatchObject({ ingresos: 1_000_000_00, gastosDelMes: 280_000_00, resultado: 720_000_00 });
+    expect(dic.resto).toBe(770_000_00);
+  });
+
+  it("un presupuesto con tarjeta cuenta en el mes y resta del mes siguiente", () => {
+    const datos: Datos = {
+      ...vacio(),
+      cuentas: [{ ...banco, saldoInicial: 2_000_000_00 }, ahorro, visa],
+      presupuestos: [
+        {
+          id: "viveres",
+          nombre: "Víveres",
+          icono: "🛒",
+          monto: 1_500_000_00,
+          cuentaId: "visa",
+          desde: "2026-12",
+          hasta: "2026-12",
+          categoriaIds: [],
+        },
+      ],
+    };
+    const [dic, ene] = calcularPrevision(datos, { desde: "2026-12", meses: 2 });
+    expect(dic.tarjetaPorCategoria[categoriaResto(datos.presupuestos![0])]).toBe(1_500_000_00);
+    expect(dic).toMatchObject({ gastosDelMes: 0, resto: 2_000_000_00 });
+    expect(ene).toMatchObject({ gastosDelMes: 1_500_000_00, resto: 500_000_00 });
+  });
+
+  it("las cuotas futuras no repiten las que ya están en un resumen cerrado", () => {
+    const datos: Datos = {
+      ...vacio(),
+      movimientos: [
+        mov("c1", "2026-11-10", 10_000_00, "visa", { origen: { tipo: "cuotas", planId: "p", numero: 1, total: 2 } }),
+        mov("c2", "2026-12-10", 10_000_00, "visa", { origen: { tipo: "cuotas", planId: "p", numero: 2, total: 2 } }),
+      ],
+    };
+    const [nov] = calcularPrevision(datos, { desde: "2026-11", meses: 1 });
+    // La 1 cierra en noviembre (ya es deuda de la tarjeta); falta la 2.
+    expect(nov.deudaTarjetas).toBe(10_000_00);
+    expect(nov.deudaCuotas).toBe(20_000_00);
+    expect(nov.cuotasFuturas).toBe(10_000_00);
   });
 });

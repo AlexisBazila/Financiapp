@@ -92,6 +92,16 @@ const SECCIONES = [
     ),
   },
   {
+    href: "/tarjetas",
+    nombre: "Tarjetas",
+    icono: trazo(
+      <>
+        <rect x="2.5" y="5" width="19" height="14" rx="2" />
+        <path d="M2.5 10h19M6 15h4" />
+      </>,
+    ),
+  },
+  {
     href: "/categorias",
     nombre: "Categorías",
     icono: trazo(

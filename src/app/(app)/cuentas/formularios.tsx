@@ -21,23 +21,35 @@ function Mensaje({ estado, ok }: { estado: Resultado; ok: string }) {
   return null;
 }
 
-/** Alta de una cuenta, o edición si viene `inicial`. */
-export function FormularioCuenta({
-  cuentasPago,
-  titulares,
-  inicial,
-}: {
-  cuentasPago: { id: string; nombre: string }[];
-  /** Personas ya cargadas como titulares, para sugerir. */
-  titulares: string[];
-  inicial?: Cuenta;
-}) {
+/** Personas ya cargadas como titulares, para sugerir. */
+function CampoTitular({ titulares, inicial }: { titulares: string[]; inicial?: string }) {
+  const lista = useId();
+  return (
+    <label className={etiqueta}>
+      De quién es (opcional)
+      <input
+        name="titular"
+        list={lista}
+        maxLength={40}
+        autoComplete="off"
+        defaultValue={inicial}
+        placeholder="Alexis, Sol, compartida…"
+        className={campo}
+      />
+      <datalist id={lista}>
+        {titulares.map((t) => (
+          <option key={t} value={t} />
+        ))}
+      </datalist>
+    </label>
+  );
+}
+
+/** Alta de una cuenta (banco, billetera, efectivo, inversión), o edición si viene `inicial`. */
+export function FormularioCuenta({ titulares, inicial }: { titulares: string[]; inicial?: Cuenta }) {
   const [estado, accion, pendiente] = useActionState(guardarCuenta.bind(null, inicial?.id ?? null), {});
   const [tipo, setTipo] = useState<string>(inicial?.tipo ?? "banco");
   const [moneda, setMoneda] = useState(inicial?.moneda ?? "ARS");
-  const esTarjeta = tipo === "tarjeta";
-  const listaTitulares = useId();
-  const pagos = cuentasPago.filter((c) => c.id !== inicial?.id);
 
   return (
     <form action={accion} className="grid gap-4 sm:grid-cols-2">
@@ -47,7 +59,7 @@ export function FormularioCuenta({
           name="nombre"
           required
           defaultValue={inicial?.nombre}
-          placeholder="Caja de ahorro, Visa, Plazo fijo…"
+          placeholder="Caja de ahorro, Mercado Pago, Plazo fijo…"
           className={campo}
         />
       </label>
@@ -58,11 +70,10 @@ export function FormularioCuenta({
           <option value="efectivo">Efectivo</option>
           <option value="billetera">Billetera virtual</option>
           <option value="inversion">Inversión</option>
-          <option value="tarjeta">Tarjeta de crédito</option>
         </select>
       </label>
       <label className={etiqueta}>
-        {esTarjeta ? "Resumen ya cerrado a pagar ese mes ($)" : `Saldo (${simbolo(moneda)}), al inicio del mes o a la fecha de abajo`}
+        {`Saldo (${simbolo(moneda)}), al inicio del mes o a la fecha de abajo`}
         <input
           name="saldo"
           inputMode="decimal"
@@ -71,55 +82,24 @@ export function FormularioCuenta({
           className={campo}
         />
       </label>
-      {!esTarjeta && (
-        <label className={etiqueta}>
-          Fecha del saldo (opcional)
-          <input name="saldo_fecha" type="date" defaultValue={inicial?.saldoFecha} className={campo} />
-          <span className="text-xs font-normal opacity-70">
-            Si cargaste el saldo que ves hoy en el banco, poné la fecha de hoy: lo de esta cuenta hasta ese día ya
-            está en el saldo y no se vuelve a descontar.
-          </span>
-        </label>
-      )}
-      {!esTarjeta && (
-        <label className={etiqueta}>
-          Moneda
-          <select name="moneda" value={moneda} onChange={(e) => setMoneda(e.target.value)} className={campo}>
-            <option value="ARS">Pesos ($)</option>
-            <option value="USD">Dólares (US$)</option>
-            <option value="EUR">Euros (€)</option>
-          </select>
-        </label>
-      )}
       <label className={etiqueta}>
-        De quién es (opcional)
-        <input
-          name="titular"
-          list={listaTitulares}
-          maxLength={40}
-          autoComplete="off"
-          defaultValue={inicial?.titular}
-          placeholder="Alexis, Sol, compartida…"
-          className={campo}
-        />
-        <datalist id={listaTitulares}>
-          {titulares.map((t) => (
-            <option key={t} value={t} />
-          ))}
-        </datalist>
+        Fecha del saldo (opcional)
+        <input name="saldo_fecha" type="date" defaultValue={inicial?.saldoFecha} className={campo} />
+        <span className="text-xs font-normal opacity-70">
+          Si cargaste el saldo que ves hoy en el banco, poné la fecha de hoy: lo de esta cuenta hasta ese día ya
+          está en el saldo y no se vuelve a descontar.
+        </span>
       </label>
-      {esTarjeta ? (
-        <label className={etiqueta}>
-          Se paga desde
-          <select name="cuenta_pago_id" required defaultValue={inicial?.tarjeta?.cuentaPagoId} className={campo}>
-            {pagos.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.nombre}
-              </option>
-            ))}
-          </select>
-        </label>
-      ) : moneda !== "ARS" ? (
+      <label className={etiqueta}>
+        Moneda
+        <select name="moneda" value={moneda} onChange={(e) => setMoneda(e.target.value)} className={campo}>
+          <option value="ARS">Pesos ($)</option>
+          <option value="USD">Dólares (US$)</option>
+          <option value="EUR">Euros (€)</option>
+        </select>
+      </label>
+      <CampoTitular titulares={titulares} inicial={inicial?.titular} />
+      {moneda !== "ARS" ? (
         <p className="self-end pb-2 text-sm text-black/60 dark:text-white/60">
           Cuenta como disponible no inmediato: hay que cambiar la moneda para usarla.
         </p>
@@ -140,66 +120,113 @@ export function FormularioCuenta({
           </select>
         </label>
       )}
-      {esTarjeta && (
-        <>
-          <label className={etiqueta}>
-            Día de cierre habitual
-            <input
-              name="dia_cierre"
-              type="number"
-              min={1}
-              max={31}
-              required
-              defaultValue={inicial?.tarjeta?.diaCierre}
-              className={campo}
-            />
-          </label>
-          <label className={etiqueta}>
-            Día de vencimiento habitual
-            <input
-              name="dia_vencimiento"
-              type="number"
-              min={1}
-              max={31}
-              required
-              defaultValue={inicial?.tarjeta?.diaVencimiento}
-              className={campo}
-            />
-          </label>
-          <label className={etiqueta}>
-            Límite de compra (opcional, $)
-            <input
-              name="limite"
-              inputMode="decimal"
-              placeholder="4.000.000"
-              defaultValue={inicial?.tarjeta?.limite ? pesosExactos(inicial.tarjeta.limite) : undefined}
-              className={campo}
-            />
-          </label>
-        </>
-      )}
-      {esTarjeta && (
-        <label className="flex items-start gap-2 text-sm sm:col-span-2">
-          <input
-            name="pago_automatico"
-            type="checkbox"
-            defaultChecked={inicial?.tarjeta?.pagoAutomatico ?? true}
-            className="mt-0.5 size-4"
-          />
-          <span>
-            Pagar el resumen automáticamente al vencimiento, con lo que haya en la cuenta de pago. Si no alcanza, lo
-            que falta queda como deuda. Si en el mes cargás un pago de tarjeta, se usa ese.
-          </span>
-        </label>
-      )}
-      {esTarjeta && pagos.length === 0 && (
-        <p className="text-sm text-red-600 sm:col-span-2">Primero cargá la cuenta desde la que pagás la tarjeta.</p>
-      )}
       <div className="flex items-center gap-3 sm:col-span-2">
         <button type="submit" disabled={pendiente} className={boton}>
           {inicial ? "Guardar cambios" : "Agregar cuenta"}
         </button>
         <Mensaje estado={estado} ok={inicial ? "Guardado." : "Cuenta agregada."} />
+      </div>
+    </form>
+  );
+}
+
+/** Alta de una tarjeta de crédito, o edición si viene `inicial`. */
+export function FormularioTarjeta({
+  cuentasPago,
+  titulares,
+  inicial,
+}: {
+  cuentasPago: { id: string; nombre: string }[];
+  titulares: string[];
+  inicial?: Cuenta;
+}) {
+  const [estado, accion, pendiente] = useActionState(guardarCuenta.bind(null, inicial?.id ?? null), {});
+
+  return (
+    <form action={accion} className="grid gap-4 sm:grid-cols-2">
+      <input type="hidden" name="tipo" value="tarjeta" />
+      <label className={etiqueta}>
+        Nombre
+        <input name="nombre" required defaultValue={inicial?.nombre} placeholder="Visa Macro, Mastercard…" className={campo} />
+      </label>
+      <CampoTitular titulares={titulares} inicial={inicial?.titular} />
+      <label className={etiqueta}>
+        Día de cierre habitual
+        <input
+          name="dia_cierre"
+          type="number"
+          min={1}
+          max={31}
+          required
+          defaultValue={inicial?.tarjeta?.diaCierre}
+          className={campo}
+        />
+      </label>
+      <label className={etiqueta}>
+        Día de vencimiento habitual
+        <input
+          name="dia_vencimiento"
+          type="number"
+          min={1}
+          max={31}
+          required
+          defaultValue={inicial?.tarjeta?.diaVencimiento}
+          className={campo}
+        />
+      </label>
+      <label className={etiqueta}>
+        Se paga desde
+        <select name="cuenta_pago_id" required defaultValue={inicial?.tarjeta?.cuentaPagoId} className={campo}>
+          {cuentasPago.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.nombre}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className={etiqueta}>
+        Límite de compra (opcional, $)
+        <input
+          name="limite"
+          inputMode="decimal"
+          placeholder="4.000.000"
+          defaultValue={inicial?.tarjeta?.limite ? pesosExactos(inicial.tarjeta.limite) : undefined}
+          className={campo}
+        />
+      </label>
+      <label className={etiqueta}>
+        Resumen ya cerrado a pagar en el primer mes ($)
+        <input
+          name="saldo"
+          inputMode="decimal"
+          placeholder="0"
+          defaultValue={inicial ? pesosExactos(inicial.saldoInicial) : undefined}
+          className={campo}
+        />
+        <span className="text-xs font-normal opacity-70">
+          Si ese resumen ya lo pagaste antes de cargar el saldo de la cuenta de pago, dejalo en 0.
+        </span>
+      </label>
+      <label className="flex items-start gap-2 text-sm sm:col-span-2">
+        <input
+          name="pago_automatico"
+          type="checkbox"
+          defaultChecked={inicial?.tarjeta?.pagoAutomatico ?? true}
+          className="mt-0.5 size-4"
+        />
+        <span>
+          Pagar el resumen automáticamente al vencimiento, con lo que haya en la cuenta de pago. Si no alcanza, lo
+          que falta queda como deuda. Si en el mes cargás un pago de tarjeta, se usa ese.
+        </span>
+      </label>
+      {cuentasPago.length === 0 && (
+        <p className="text-sm text-red-600 sm:col-span-2">Primero cargá la cuenta desde la que pagás la tarjeta.</p>
+      )}
+      <div className="flex items-center gap-3 sm:col-span-2">
+        <button type="submit" disabled={pendiente || cuentasPago.length === 0} className={boton}>
+          {inicial ? "Guardar cambios" : "Agregar tarjeta"}
+        </button>
+        <Mensaje estado={estado} ok={inicial ? "Guardado." : "Tarjeta agregada."} />
       </div>
     </form>
   );

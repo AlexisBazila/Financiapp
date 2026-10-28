@@ -18,7 +18,7 @@ export default async function Presupuestos({ searchParams }: PageProps<"/presupu
   const { supabase } = await requerirUsuario();
   const { datos, categorias, presupuestos, cuentasActivas } = await cargarHogar(supabase);
   const porId = new Map(categorias.map((c) => [c.id, c]));
-  const cuentas = datos.cuentas.filter((c) => cuentasActivas.includes(c.id)).map((c) => ({ id: c.id, nombre: c.nombre }));
+  const cuentas = datos.cuentas.filter((c) => cuentasActivas.includes(c.id)).map((c) => ({ id: c.id, nombre: c.tarjeta ? `💳 ${c.nombre}` : c.nombre }));
   const nombres = new Map(datos.cuentas.map((c) => [c.id, c.nombre]));
   const activas = categorias.filter((c) => !c.archivada);
   const [delMes] = calcularPrevision(datos, { desde: mes, meses: 1 });

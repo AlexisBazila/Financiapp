@@ -148,8 +148,8 @@ async function Tarjeta({
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <Link href="/cuentas" className={`text-sm hover:underline ${textoSuave}`}>
-            ← Cuentas
+          <Link href="/tarjetas" className={`text-sm hover:underline ${textoSuave}`}>
+            ← Tarjetas
           </Link>
           <h1 className="text-2xl font-semibold">{cuenta.nombre}</h1>
           {cuenta.titular && <p className={`text-sm ${textoSuave}`}>👤 {cuenta.titular}</p>}

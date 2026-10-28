@@ -12,6 +12,7 @@ import {
 } from "@/lib/finanzas/prevision";
 import type { Datos, Escenario, Mes } from "@/lib/finanzas/tipos";
 import { pesos } from "./formato";
+import { Ayuda, patrimonioDe, TOTALIZADORES } from "./totalizadores";
 
 const BASE = "base";
 
@@ -146,12 +147,13 @@ function Resumen({ mes, real }: { mes: MesPrevision; real: MesPrevision }) {
   // Las deudas se muestran en negativo, para leerlas igual que los saldos. Arriba lo real (lo que hay en
   // las cuentas con lo confirmado) y abajo cómo queda al cierre del mes con lo planificado.
   const tarjetas = [
-    { titulo: "Disponible", valor: (m: MesPrevision) => m.disponible, nota: "para gastar ya" },
-    { titulo: "No inmediato", valor: (m: MesPrevision) => m.disponible48h, nota: "FCI, dólares, plazo fijo" },
-    { titulo: "Reserva", valor: (m: MesPrevision) => m.reserva, nota: "ahorro apartado" },
-    { titulo: "Deuda tarjetas", valor: (m: MesPrevision) => -m.deudaTarjetas, nota: "resúmenes por pagar" },
+    { ...TOTALIZADORES.patrimonio, valor: patrimonioDe },
+    { ...TOTALIZADORES.disponible, valor: (m: MesPrevision) => m.disponible },
+    { ...TOTALIZADORES.noInmediato, valor: (m: MesPrevision) => m.disponible48h },
+    { ...TOTALIZADORES.reserva, valor: (m: MesPrevision) => m.reserva },
+    { ...TOTALIZADORES.deudaTarjetas, valor: (m: MesPrevision) => -m.deudaTarjetas, nota: "resúmenes por pagar" },
     {
-      titulo: "Deuda en cuotas",
+      ...TOTALIZADORES.deudaCuotas,
       valor: (m: MesPrevision) => -m.deudaCuotas,
       nota: `$ ${pesos(mes.cuotasDelMes)} se pagan este mes`,
     },
@@ -167,14 +169,17 @@ function Resumen({ mes, real }: { mes: MesPrevision; real: MesPrevision }) {
           <span className="text-red-600"> · $ {pesos(mes.impagoTarjetas)} de tarjeta vencido sin pagar</span>
         )}
       </h2>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {tarjetas.map((t) => {
           const hoy = t.valor(real);
           const plan = t.valor(mes);
           const cambio = plan - hoy;
           return (
-            <div key={t.titulo} className="rounded-xl border border-black/10 p-4 dark:border-white/15">
-              <div className="text-sm text-black/60 dark:text-white/60">{t.titulo}</div>
+            <div key={t.titulo} className="rounded-xl border border-black/10 p-4 dark:border-white/15" title={t.ayuda}>
+              <div className="flex items-center gap-1 text-sm text-black/60 dark:text-white/60">
+                {t.titulo}
+                <Ayuda texto={t.ayuda} />
+              </div>
               <div
                 className={`mt-1 text-xl font-semibold tabular-nums ${
                   hoy < 0 ? "text-red-600 dark:text-red-400" : hoy > 0 ? "text-green-700 dark:text-green-400" : ""
@@ -206,7 +211,14 @@ function conSigno(centavos: number): string {
   return `${centavos < 0 ? "−" : ""}$ ${pesos(Math.abs(centavos))}`;
 }
 
-function categorias(prevision: MesPrevision[], clave: "ingresosPorCategoria" | "egresosPorCategoria") {
+type PorCategoria = "ingresosPorCategoria" | "cuentasPorCategoria" | "tarjetaPorCategoria";
+const CLAVES: Record<"ingreso" | "egreso" | "tarjeta", PorCategoria> = {
+  ingreso: "ingresosPorCategoria",
+  egreso: "cuentasPorCategoria",
+  tarjeta: "tarjetaPorCategoria",
+};
+
+function categorias(prevision: MesPrevision[], clave: PorCategoria) {
   const todas = new Set(prevision.flatMap((m) => Object.keys(m[clave])));
   const total = (c: string) => prevision.reduce((s, m) => s + (m[clave][c] ?? 0), 0);
   return [...todas].sort((a, b) => total(b) - total(a));
@@ -252,7 +264,9 @@ function Grilla({
       return nuevo;
     });
   const ingresos = categorias(plan ?? prevision, "ingresosPorCategoria");
-  const egresos = categorias(plan ?? prevision, "egresosPorCategoria");
+  const egresos = categorias(plan ?? prevision, "cuentasPorCategoria");
+  const enTarjeta = categorias(plan ?? prevision, "tarjetaPorCategoria");
+  const hayTarjetas = (plan ?? prevision).some((m) => m.consumoTarjetas || m.venceTarjetas || m.impagoTarjetas);
   /** Al comparar, lo planificado del mes `i` debajo del valor. */
   const debajo = (valor: (m: MesPrevision) => number, i: number) =>
     plan && (
@@ -293,8 +307,9 @@ function Grilla({
       })}
     </tr>
   );
-  const filaCategoria = (tipo: "ingreso" | "egreso", c: string) => {
-    const clave = tipo === "ingreso" ? "ingresosPorCategoria" : "egresosPorCategoria";
+  const filaCategoria = (tipo: "ingreso" | "egreso" | "tarjeta", c: string) => {
+    const clave = CLAVES[tipo];
+    const tono = tipo === "ingreso" ? "ingreso" : "egreso";
     const grupo = `${tipo}:${c}`;
     const conDetalle = prevision.some((m) => (m.detalle[grupo]?.length ?? 0) > 0);
     const abierta = abiertas.has(grupo);
@@ -320,7 +335,7 @@ function Grilla({
           const v = m[clave][c] ?? 0;
           const info: Celda | undefined = m.celdas[`${tipo}:${c}`];
           return (
-            <td key={m.mes} className={`${celda} ${info ? TONOS[tipo][info.certeza] : ""}`}>
+            <td key={m.mes} className={`${celda} ${info ? TONOS[tono][info.certeza] : ""}`}>
               {!sinReal(m) && (
                 <span className={info?.cuotas ? `${MARCA_CUOTAS} px-1.5 py-0.5` : ""}>{v === 0 ? "–" : pesos(v)}</span>
               )}
@@ -329,7 +344,7 @@ function Grilla({
           );
         })}
       </tr>
-      {abierta && filasDetalle(tipo, grupo)}
+      {abierta && filasDetalle(tono, grupo)}
       </Fragment>
     );
   };
@@ -447,27 +462,40 @@ function Grilla({
               total,
               verde,
             )}
-            {separador("Egresos")}
+            {separador("Gastos de las cuentas · débito, efectivo y billeteras")}
             {egresos.map((c) => filaCategoria("egreso", c))}
             {fila(
-              "Total egresos",
-              (m: MesPrevision) => m.egresos,
+              "Subtotal gastos",
+              (m: MesPrevision) => m.egresosCuentas,
               total,
               rojo,
             )}
+            {hayTarjetas && (
+              <tr>
+                <th scope="row" className={`${primera} font-normal`} title="El resumen de la tarjeta que vence este mes: lo comprado el mes anterior">
+                  ↘ Deuda TC período anterior
+                </th>
+                {prevision.map((m, i) => (
+                  <td key={m.mes} className={`${celda} text-red-700 dark:text-red-400`}>
+                    {sinReal(m) ? "" : m.venceTarjetas === 0 ? "–" : pesos(m.venceTarjetas)}
+                    {debajo((x) => x.venceTarjetas, i)}
+                  </td>
+                ))}
+              </tr>
+            )}
+            {hayTarjetas &&
+              fila(
+                "Total gastos del mes",
+                (m: MesPrevision) => m.gastosDelMes,
+                total,
+                rojo,
+              )}
             {fila(
               "Resultado del mes",
-              (m: MesPrevision) => m.neto,
+              (m: MesPrevision) => m.resultado,
               total,
               signo,
             )}
-            {prevision.some((m) => m.ajusteTarjetas) &&
-              fila(
-                "± Tarjeta: consumo que se paga el mes siguiente − resumen que vence",
-                (m: MesPrevision) => m.ajusteTarjetas,
-                "text-xs",
-                signo,
-              )}
             {objetivos.length > 0 && (
               <>
                 {separador("Ahorro e inversión")}
@@ -496,7 +524,7 @@ function Grilla({
               <th scope="row" className={`${primera} py-2.5`}>
                 <div className="text-base font-bold">Resto</div>
                 <div className="text-xs font-normal text-black/50 dark:text-white/50">
-                  sobrante anterior + resultado ± tarjeta − ahorro · pasa al mes siguiente
+                  sobrante anterior + resultado − ahorro · pasa al mes siguiente
                 </div>
               </th>
               {prevision.map((m, i) => (
@@ -514,26 +542,16 @@ function Grilla({
                 </td>
               ))}
             </tr>
-            {prevision.some((m) => m.consumoTarjetas || m.venceTarjetas || m.impagoTarjetas) && (
+            {hayTarjetas && (
               <>
-                {separador("Tarjetas de crédito")}
+                {separador("Tarjetas de crédito · lo del mes se paga el mes siguiente")}
+                {enTarjeta.map((c) => filaCategoria("tarjeta", c))}
                 {fila(
-                  "Consumo del mes",
+                  "Total mensual TC",
                   (m: MesPrevision) => m.consumoTarjetas,
-                  "",
+                  `${total} bg-amber-50 dark:bg-amber-500/10`,
                   () => "text-amber-700 dark:text-amber-400",
                 )}
-                <tr>
-                  <th scope="row" className={`${primera} font-normal`}>
-                    Deuda del mes anterior
-                  </th>
-                  {prevision.map((m, i) => (
-                    <td key={m.mes} className={`${celda} text-red-700 dark:text-red-400`}>
-                      {sinReal(m) ? "" : m.venceTarjetas === 0 ? "–" : `↘ ${pesos(m.venceTarjetas)}`}
-                      {debajo((x) => x.venceTarjetas, i)}
-                    </td>
-                  ))}
-                </tr>
                 {prevision.some((m) => m.impagoTarjetas > 0) &&
                   fila(
                     "Vencido sin pagar",
@@ -623,9 +641,9 @@ function Grilla({
           detalle)
         </span>
         <span>
-          Lo comprado con tarjeta es gasto del mes en que cierra su resumen (el período del 23/10 al 19/11 es
-          noviembre); esa deuda (↘) se paga el mes siguiente y baja el disponible ahí. El pago automático usa solo lo
-          que hay en la cuenta de pago; lo que no alcanza queda como vencido sin pagar.
+          Lo comprado con tarjeta va en su grupo, en el mes en que cierra su resumen (el período del 23/10 al 19/11 es
+          noviembre). Se paga el mes siguiente: ahí aparece como deuda TC período anterior (↘) y resta del resto. El
+          pago automático usa solo lo que hay en la cuenta de pago; lo que no alcanza queda como vencido sin pagar.
         </span>
       </div>
     </section>

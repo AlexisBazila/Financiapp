@@ -216,7 +216,11 @@ function Fila({
   const s = signo(m, cuentaId);
   const color = colores(s, m.estado === "real");
   const ruta = m.categoriaId ? rutaCategoria(categorias, m.categoriaId) : m.categoria;
-  const puntoColor = m.categoriaId ? categorias.get(m.categoriaId)?.color : undefined;
+  const categoria = m.categoriaId ? categorias.get(m.categoriaId) : undefined;
+  const padre = categoria?.padreId ? categorias.get(categoria.padreId) : undefined;
+  // El ícono de la subcategoría o, si no tiene, el de su categoría.
+  const icono = categoria?.icono || padre?.icono || (m.tipo === "transferencia" ? "🔁" : "");
+  const tono = categoria?.color ?? padre?.color;
   const cuota =
     m.origen.tipo === "cuotas" || m.origen.tipo === "prestamo" || m.origen.tipo === "deuda" ? m.origen : undefined;
   const pagoDeTarjeta =
@@ -227,7 +231,13 @@ function Fila({
       className={`flex flex-col gap-2 border-r-4 border-b border-b-black/5 px-4 py-3 text-sm last:border-b-0 dark:border-b-white/10 ${color.borde}`}
     >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        {puntoColor ? <Punto color={puntoColor} /> : <span className="size-3" />}
+        <span
+          aria-hidden
+          className="flex size-11 shrink-0 items-center justify-center rounded-full bg-black/5 text-2xl dark:bg-white/10"
+          style={tono ? { backgroundColor: `${tono}26`, boxShadow: `inset 0 0 0 2px ${tono}` } : undefined}
+        >
+          {icono || <Punto color={tono ?? "#9ca3af"} />}
+        </span>
         <span className="min-w-48 flex-1">
           <span className="font-medium">
             {m.descripcion ||
@@ -263,7 +273,7 @@ function Fila({
           {s > 0 ? "+" : s < 0 ? "−" : ""}$ {pesosExactos(m.monto)}
         </span>
       </div>
-      <div className="pl-6">
+      <div className="pl-14">
         <AccionesMovimiento mov={m} guardado={guardado} opciones={opciones} />
       </div>
     </li>
