@@ -170,6 +170,8 @@ export interface Presupuesto {
   desde: Mes;
   /** Último mes; sin `hasta` se repite siempre. */
   hasta?: Mes;
+  /** Cada cuántos meses se repite, contando desde `desde`: 1 (o nada) es todos los meses. */
+  cadaMeses?: number;
   /** Categorías y subcategorías que cuentan (las subcategorías de una categoría ya incluidas). */
   categoriaIds: string[];
   /** Cuentas cuyos gastos cuentan; sin `cuentaIds`, los de todas. */

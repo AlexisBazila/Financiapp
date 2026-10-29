@@ -64,6 +64,17 @@ function ElegirCategorias({ categorias, iniciales }: { categorias: Categoria[]; 
   );
 }
 
+/** Cada cuántos meses se repite un presupuesto; "una" es un solo mes. */
+const FRECUENCIAS: [string, string][] = [
+  ["una", "Solo un mes"],
+  ["1", "Todos los meses"],
+  ["2", "Cada 2 meses"],
+  ["3", "Cada 3 meses"],
+  ["4", "Cada 4 meses"],
+  ["6", "Cada 6 meses"],
+  ["12", "Una vez por año"],
+];
+
 /** Gastos de qué cuentas cuentan: todas, o las que se marquen. */
 function ElegirCuentas({ cuentas, iniciales }: { cuentas: Opcion[]; iniciales?: string[] }) {
   const [algunas, setAlgunas] = useState(Boolean(iniciales));
@@ -112,7 +123,10 @@ export function FormularioPresupuesto({
   inicial?: Presupuesto;
 }) {
   const [estado, accion, pendiente] = useActionState(guardarPresupuesto.bind(null, inicial?.id ?? null), {});
-  const [repite, setRepite] = useState(!inicial || inicial.hasta !== inicial.desde);
+  const [frecuencia, setFrecuencia] = useState(
+    inicial && inicial.hasta === inicial.desde ? "una" : String(inicial?.cadaMeses ?? 1),
+  );
+  const repite = frecuencia !== "una";
 
   return (
     <form action={accion} className="grid gap-4 sm:grid-cols-3">
@@ -154,9 +168,15 @@ export function FormularioPresupuesto({
         {repite ? "Desde" : "Mes"}
         <input name="desde" type="month" required defaultValue={inicial?.desde ?? mesActual} className={campo} />
       </label>
-      <label className="flex items-center gap-2 self-end pb-2 text-sm">
-        <input name="repite" type="checkbox" checked={repite} onChange={(e) => setRepite(e.target.checked)} className="size-4" />
-        Se repite todos los meses
+      <label className={etiqueta}>
+        Se repite
+        <select name="frecuencia" value={frecuencia} onChange={(e) => setFrecuencia(e.target.value)} className={campo}>
+          {FRECUENCIAS.map(([valor, nombre]) => (
+            <option key={valor} value={valor}>
+              {nombre}
+            </option>
+          ))}
+        </select>
       </label>
       {repite && (
         <label className={etiqueta}>

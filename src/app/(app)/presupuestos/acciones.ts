@@ -18,7 +18,10 @@ export async function guardarPresupuesto(id: string | null, _: Resultado, form: 
   const monto = pesosACentavos(texto(form, "monto"));
   const cuentaId = texto(form, "cuenta_id");
   const desde = texto(form, "desde");
-  const repite = form.get("repite") === "on";
+  // "una" es un solo mes; si no, cada cuántos meses se repite.
+  const frecuencia = texto(form, "frecuencia") || "1";
+  const repite = frecuencia !== "una";
+  const cadaMeses = repite ? Number(frecuencia) : 1;
   const hasta = repite ? texto(form, "hasta") : desde;
   const categoriaIds = form.getAll("categoria_ids").filter((v): v is string => typeof v === "string" && v !== "");
   const algunas = texto(form, "cuentas") === "algunas";
@@ -30,6 +33,7 @@ export async function guardarPresupuesto(id: string | null, _: Resultado, form: 
   if (!monto || monto <= 0) return { error: "El monto tiene que ser un número mayor a cero." };
   if (!cuentaId) return { error: "Elegí la cuenta." };
   if (!Number.isFinite(aumento) || aumento < 0 || aumento > 100) return { error: "El aumento va de 0 a 100 %." };
+  if (!Number.isInteger(cadaMeses) || cadaMeses < 1 || cadaMeses > 12) return { error: "Elegí cada cuántos meses se repite." };
   if (!MES.test(desde)) return { error: "Elegí desde qué mes." };
   if (hasta && (!MES.test(hasta) || hasta < desde)) return { error: "El mes final tiene que ser posterior al inicial." };
   if (categoriaIds.length === 0) return { error: "Elegí al menos una categoría." };
@@ -43,6 +47,7 @@ export async function guardarPresupuesto(id: string | null, _: Resultado, form: 
     cuenta_id: cuentaId,
     desde,
     hasta: hasta || null,
+    cada_meses: cadaMeses,
     categoria_ids: categoriaIds,
     cuenta_ids: algunas ? cuentaIds : null,
   };

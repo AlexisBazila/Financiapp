@@ -31,7 +31,7 @@ export default async function Presupuestos({ searchParams }: PageProps<"/presupu
   const meses = (p: (typeof presupuestos)[number]) =>
     p.hasta === p.desde
       ? `solo ${nombreMes(p.desde)}`
-      : `todos los meses desde ${nombreMes(p.desde)}${p.hasta ? ` hasta ${nombreMes(p.hasta)}` : ""}`;
+      : `${p.cadaMeses && p.cadaMeses > 1 ? (p.cadaMeses === 12 ? "una vez por año" : `cada ${p.cadaMeses} meses`) : "todos los meses"} desde ${nombreMes(p.desde)}${p.hasta ? ` hasta ${nombreMes(p.hasta)}` : ""}`;
 
   const flecha =
     "rounded-lg border border-black/15 px-3 py-1.5 text-lg leading-none hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10";

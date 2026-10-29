@@ -291,7 +291,7 @@ function Grilla({
   ];
 
   const celda = "px-3 py-1.5 text-right tabular-nums whitespace-nowrap";
-  const primera = "sticky left-0 bg-background px-3 py-1.5 text-left whitespace-nowrap";
+  const primera = "sticky left-0 z-10 bg-background px-3 py-1.5 text-left whitespace-nowrap";
 
   const fila = (
     titulo: string,
@@ -462,12 +462,13 @@ function Grilla({
   };
   const separador = (titulo: string) => (
     <tr key={`sep-${titulo}`}>
+      {/* El título va en la primera columna, que queda fija: así se lee aunque la tabla esté corrida. */}
       <th
-        colSpan={prevision.length + 1}
-        className={`${primera} pt-4 text-xs font-semibold uppercase tracking-wide text-black/50 dark:text-white/50`}
+        className={`${primera} max-w-0 overflow-visible pt-4 text-xs font-semibold uppercase tracking-wide text-black/50 dark:text-white/50`}
       >
         {titulo}
       </th>
+      <td colSpan={prevision.length} />
     </tr>
   );
   const total = "border-t border-black/10 font-semibold dark:border-white/15";
@@ -480,13 +481,15 @@ function Grilla({
     <section>
       <h2 className="mb-3 text-lg font-semibold">Previsión mes a mes</h2>
       {detalle && <DetallePopup contenido={detalle} cuentas={cuentas} alCerrar={() => setDetalle(null)} />}
-      <div className="overflow-x-auto rounded-xl border border-black/10 dark:border-white/15">
+      {/* Con alto máximo y scroll propio: los encabezados quedan fijos al bajar y la barra horizontal queda
+          siempre a la vista, abajo de la tabla. */}
+      <div className="max-h-[calc(100dvh-8rem)] overflow-auto overscroll-contain rounded-xl border border-black/10 dark:border-white/15">
         <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-black/10 dark:border-white/15">
-              <th className={`${primera} font-semibold`}>Concepto</th>
+          <thead className="sticky top-0 z-20 bg-background shadow-[0_1px_0_rgb(0_0_0/0.1)] dark:shadow-[0_1px_0_rgb(255_255_255/0.15)]">
+            <tr>
+              <th className={`${primera} z-30 font-semibold`}>Concepto</th>
               {prevision.map((m) => (
-                <th key={m.mes} className={`${celda} font-semibold`}>
+                <th key={m.mes} className={`${celda} bg-background font-semibold`}>
                   {nombreMes(m.mes)}
                 </th>
               ))}
