@@ -235,6 +235,7 @@ export interface FilaPresupuesto {
   cuenta_id: string;
   desde: string;
   hasta: string | null;
+  cada_meses?: number | null;
   categoria_ids: string[];
   cuenta_ids: string[] | null;
 }
@@ -249,6 +250,7 @@ export function aPresupuesto(fila: FilaPresupuesto): Presupuesto {
     cuentaId: fila.cuenta_id,
     desde: fila.desde,
     hasta: fila.hasta ?? undefined,
+    ...(fila.cada_meses && fila.cada_meses > 1 ? { cadaMeses: fila.cada_meses } : {}),
     categoriaIds: fila.categoria_ids,
     cuentaIds: fila.cuenta_ids ?? undefined,
   };

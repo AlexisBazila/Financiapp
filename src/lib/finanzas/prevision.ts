@@ -405,7 +405,7 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
   for (const mes of meses) {
     const delMes: MesPresupuesto[] = [];
     for (const p of datos.presupuestos ?? []) {
-      if (mes < p.desde || (p.hasta && mes > p.hasta)) continue;
+      if (!correPresupuesto(p, mes)) continue;
       const resumen = resumenPresupuesto(p, mes, movimientos, cuentas);
       delMes.push(resumen);
       const tarjeta = cuentas.get(p.cuentaId)?.tarjeta ? cuentas.get(p.cuentaId) : undefined;
@@ -699,6 +699,12 @@ function resumenPresupuesto(
   const gastado = delMes.reduce((total, m) => total + m.monto, 0);
   const monto = montoPresupuesto(p, mes);
   return { id: p.id, nombre: p.nombre, monto, gastado, resto: monto - gastado, movimientos: delMes };
+}
+
+/** Si el presupuesto corre en `mes`: entre `desde` y `hasta`, y cada `cadaMeses` meses desde `desde`. */
+export function correPresupuesto(p: Pick<Presupuesto, "desde" | "hasta" | "cadaMeses">, mes: Mes): boolean {
+  if (mes < p.desde || (p.hasta && mes > p.hasta)) return false;
+  return mesesEntre(p.desde, mes) % (p.cadaMeses ?? 1) === 0;
 }
 
 /** Monto de un presupuesto en un mes, con el aumento mensual acumulado desde que empieza. */

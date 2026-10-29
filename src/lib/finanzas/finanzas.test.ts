@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { cuotasAlemanas, cuotasFrancesas, generarCuotasPlan, repartir } from "./cuotas";
 import { consolidarEscenario, aplicarEscenario } from "./escenarios";
 import { sumarMeses } from "./fechas";
-import { calcularPrevision, categoriaResto, montoPresupuesto } from "./prevision";
+import { calcularPrevision, categoriaResto, correPresupuesto, montoPresupuesto } from "./prevision";
 import { confirmar, instanciarRecurrente } from "./recurrentes";
 import { estadoTarjeta, periodoDe } from "./estado-tarjeta";
 import { resumenDeFecha } from "./tarjeta";
@@ -953,5 +953,26 @@ describe("gastos de las cuentas y con tarjeta, como la planilla", () => {
     expect(nov.deudaTarjetas).toBe(10_000_00);
     expect(nov.deudaCuotas).toBe(20_000_00);
     expect(nov.cuotasFuturas).toBe(10_000_00);
+  });
+});
+
+describe("presupuestos cada N meses", () => {
+  it("corre en desde y cada N meses, hasta el último", () => {
+    const p = { desde: "2026-11", hasta: "2027-06", cadaMeses: 2 };
+    const meses = ["2026-10", "2026-11", "2026-12", "2027-01", "2027-03", "2027-05", "2027-07"];
+    expect(meses.filter((m) => correPresupuesto(p, m))).toEqual(["2026-11", "2027-01", "2027-03", "2027-05"]);
+    expect(correPresupuesto({ desde: "2026-11" }, "2027-02")).toBe(true);
+  });
+
+  it("en los meses que no corre no prevé gasto", () => {
+    const datos: Datos = {
+      ...vacio(),
+      presupuestos: [
+        { id: "vtv", nombre: "VTV", icono: "🚗", monto: 100_000_00, cuentaId: "banco", desde: "2026-11", cadaMeses: 3, categoriaIds: [] },
+      ],
+    };
+    const meses = calcularPrevision(datos, { desde: "2026-11", meses: 4 });
+    expect(meses.map((m) => m.egresos)).toEqual([100_000_00, 0, 0, 100_000_00]);
+    expect(meses.map((m) => m.presupuestos.length)).toEqual([1, 0, 0, 1]);
   });
 });
