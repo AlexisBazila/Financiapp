@@ -482,9 +482,16 @@ describe("presupuestos", () => {
       ],
     };
     const [nov, dic] = calcularPrevision(datos, { desde: "2026-11", meses: 2 });
-    expect(nov.presupuestos).toEqual([
+    expect(nov.presupuestos).toMatchObject([
       { id: "viveres", nombre: "Víveres", monto: 1_200_000_00, gastado: 150_000_00, resto: 1_050_000_00 },
     ]);
+    // Con los gastos que lo forman, para ver el detalle.
+    expect(nov.presupuestos[0].movimientos.map((m) => [m.id, m.monto])).toEqual([
+      ["super", 100_000_00],
+      ["verdu", 50_000_00],
+    ]);
+    const resto = nov.detalle[`egreso:${categoriaResto(viveres)}`];
+    expect(resto[0].movimientos).toHaveLength(1);
     // Lo gastado más lo que resta es el presupuesto completo, más lo que no está en el presupuesto.
     expect(nov.egresos).toBe(1_200_000_00 + 70_000_00);
     expect(nov.egresosPorCategoria[categoriaResto(viveres)]).toBe(1_050_000_00);

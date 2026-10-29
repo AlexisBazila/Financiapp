@@ -22,6 +22,8 @@ export interface MesPresupuesto {
   gastado: Centavos;
   /** monto - gastado; negativo si se pasó. */
   resto: Centavos;
+  /** Los gastos que suman a `gastado`. */
+  movimientos: MovimientoDetalle[];
 }
 
 export interface MesObjetivo {
@@ -58,6 +60,20 @@ export interface DetalleItem {
   monto: Centavos;
   certeza: Certeza;
   /** "3/18" si es una cuota. */
+  cuota?: string;
+  /** Los movimientos que lo forman en el mes. */
+  movimientos: MovimientoDetalle[];
+}
+
+/** Un movimiento, para mostrar de qué está hecho un monto de la previsión. */
+export interface MovimientoDetalle {
+  id: string;
+  fecha: Fecha;
+  descripcion: string;
+  cuentaId: string;
+  /** En pesos; negativo si baja el total (una devolución en la tarjeta). */
+  monto: Centavos;
+  certeza: Certeza;
   cuota?: string;
 }
 
@@ -232,7 +248,8 @@ interface Efecto {
     cuota: boolean;
     /** Si es con tarjeta: se paga el mes siguiente. */
     tarjeta?: boolean;
-    item?: Omit<DetalleItem, "monto" | "certeza">;
+    item?: Omit<DetalleItem, "monto" | "certeza" | "movimientos">;
+    movimiento?: MovimientoDetalle;
   };
 }
 
@@ -247,7 +264,7 @@ const ORDEN_CERTEZA: Record<Certeza, number> = { planificado: 0, real: 1, concil
 const cambioDe = (c: Cuenta) => c.cambio ?? 1;
 
 /** Cómo aparece un movimiento en el detalle de su categoría. */
-function itemDe(mov: Movimiento): Omit<DetalleItem, "monto" | "certeza"> {
+function itemDe(mov: Movimiento): Omit<DetalleItem, "monto" | "certeza" | "movimientos"> {
   const o = mov.origen;
   const base = {
     nombre: mov.descripcion.replace(/\s*\(\d+\/\d+\)$/, "") || mov.contraparte || mov.categoria || "Sin descripción",
@@ -289,6 +306,15 @@ function efectosDe(mov: Movimiento, cuentas: Map<string, Cuenta>, desde: Mes): E
   const cuota = claveCuota(mov.origen) !== undefined && mov.tipo === "egreso";
   const enPesos = Math.round(mov.monto * cambioDe(cuenta));
   const item = itemDe(mov);
+  const movimiento = (signo: number): MovimientoDetalle => ({
+    id: mov.id,
+    fecha: mov.fecha,
+    descripcion: item.nombre,
+    cuentaId: mov.cuentaId,
+    monto: signo * enPesos,
+    certeza,
+    ...(item.cuota ? { cuota: item.cuota } : {}),
+  });
 
   if (mov.tipo === "transferencia") {
     const destino = cuentas.get(mov.cuentaDestinoId ?? "");
@@ -316,7 +342,7 @@ function efectosDe(mov: Movimiento, cuentas: Map<string, Cuenta>, desde: Mes): E
         mes: mesDe(mov.fecha),
         cuentaId: cuenta.id,
         ...enSaldo(mov, cuenta, signo * mov.monto),
-        flujo: { tipo: mov.tipo, categoria, monto: enPesos, certeza, cuota, item },
+        flujo: { tipo: mov.tipo, categoria, monto: enPesos, certeza, cuota, item, movimiento: movimiento(1) },
       },
     ];
   }
@@ -332,7 +358,17 @@ function efectosDe(mov: Movimiento, cuentas: Map<string, Cuenta>, desde: Mes): E
       cuentaId: cuenta.id,
       delta: -signo * mov.monto,
       consumo: -signo * mov.monto,
-      flujo: { tipo: mov.tipo, categoria, monto: enPesos, certeza, cuota, item, tarjeta: true },
+      flujo: {
+        tipo: mov.tipo,
+        categoria,
+        monto: enPesos,
+        certeza,
+        cuota,
+        item,
+        tarjeta: true,
+        // Una devolución resta del consumo.
+        movimiento: movimiento(mov.tipo === "ingreso" ? -1 : 1),
+      },
     },
     { mes: mesDe(ciclo.vencimiento), cuentaId: cuenta.id, delta: 0, vence: -signo * mov.monto },
   ];
@@ -469,6 +505,7 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
           // Varias cuotas de lo mismo en el mes: "3, 4/12".
           cuota: previo?.cuota && e.flujo.item.cuota ? juntarCuotas(previo.cuota, e.flujo.item.cuota) : e.flujo.item.cuota,
           monto: (previo?.monto ?? 0) + monto,
+          movimientos: [...(previo?.movimientos ?? []), ...(e.flujo.movimiento ? [e.flujo.movimiento] : [])],
           certeza:
             previo && ORDEN_CERTEZA[previo.certeza] < ORDEN_CERTEZA[e.flujo.certeza] ? previo.certeza : e.flujo.certeza,
         });
@@ -638,7 +675,7 @@ function resumenPresupuesto(
 ): MesPresupuesto {
   const categorias = new Set(p.categoriaIds);
   const elegidas = p.cuentaIds && new Set(p.cuentaIds);
-  const gastado = movimientos
+  const delMes = movimientos
     .filter(
       (m) =>
         m.tipo === "egreso" &&
@@ -647,9 +684,21 @@ function resumenPresupuesto(
         (!elegidas || elegidas.has(m.cuentaId)) &&
         mesDeGasto(m, cuentas) === mes,
     )
-    .reduce((total, m) => total + Math.round(m.monto * (cuentas.get(m.cuentaId)?.cambio ?? 1)), 0);
+    .map((m): MovimientoDetalle => {
+      const item = itemDe(m);
+      return {
+        id: m.id,
+        fecha: m.fecha,
+        descripcion: item.nombre,
+        cuentaId: m.cuentaId,
+        monto: Math.round(m.monto * (cuentas.get(m.cuentaId)?.cambio ?? 1)),
+        certeza: certezaDe(m),
+        ...(item.cuota ? { cuota: item.cuota } : {}),
+      };
+    });
+  const gastado = delMes.reduce((total, m) => total + m.monto, 0);
   const monto = montoPresupuesto(p, mes);
-  return { id: p.id, nombre: p.nombre, monto, gastado, resto: monto - gastado };
+  return { id: p.id, nombre: p.nombre, monto, gastado, resto: monto - gastado, movimientos: delMes };
 }
 
 /** Monto de un presupuesto en un mes, con el aumento mensual acumulado desde que empieza. */
