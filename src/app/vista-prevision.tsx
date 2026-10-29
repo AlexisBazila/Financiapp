@@ -240,6 +240,10 @@ const TONOS: Record<"ingreso" | "egreso", Record<Certeza, string>> = {
     conciliado: "font-semibold text-red-800 dark:text-red-300",
   },
 };
+/** Grupos de la grilla que se pliegan para ver solo sus totales. */
+const GRUPOS = ["cuentas", "ahorro", "tarjetas", "presupuestos"] as const;
+type Grupo = (typeof GRUPOS)[number];
+
 const MARCA_CUOTAS = "rounded ring-1 ring-inset ring-violet-400/70 dark:ring-violet-400/50";
 
 const MARCA_CUOTA_DETALLE = "rounded ring-1 ring-inset ring-amber-400";
@@ -261,6 +265,16 @@ function Grilla({
   cuentas: Record<string, string>;
 }) {
   const [detalle, setDetalle] = useState<ContenidoDetalle | null>(null);
+  // Los grupos arrancan plegados: se ven solo sus totales, y se despliegan para ver el detalle.
+  const [plegados, setPlegados] = useState<Set<Grupo>>(() => new Set(GRUPOS));
+  const alternarGrupo = (grupo: Grupo) =>
+    setPlegados((actual) => {
+      const nuevo = new Set(actual);
+      if (nuevo.has(grupo)) nuevo.delete(grupo);
+      else nuevo.add(grupo);
+      return nuevo;
+    });
+  const abierto = (grupo: Grupo) => !plegados.has(grupo);
   const sinReal = (m: MesPrevision) => Boolean(plan && hastaReal && m.mes > hastaReal);
   const [abiertas, setAbiertas] = useState<Set<string>>(new Set());
   const alternar = (clave: string) =>
@@ -460,13 +474,27 @@ function Grilla({
       ];
     });
   };
-  const separador = (titulo: string) => (
+  /** Título de una sección; con `grupo`, se toca para desplegar o plegar su detalle. */
+  const separador = (titulo: string, grupo?: Grupo) => (
     <tr key={`sep-${titulo}`}>
       {/* El título va en la primera columna, que queda fija: así se lee aunque la tabla esté corrida. */}
       <th
         className={`${primera} max-w-0 overflow-visible pt-4 text-xs font-semibold uppercase tracking-wide text-black/50 dark:text-white/50`}
       >
-        {titulo}
+        {grupo ? (
+          <button
+            type="button"
+            onClick={() => alternarGrupo(grupo)}
+            aria-expanded={!plegados.has(grupo)}
+            className="flex items-center gap-1.5 uppercase hover:text-foreground"
+            title={plegados.has(grupo) ? "Ver el detalle" : "Ver solo los totales"}
+          >
+            <span className="w-3 text-left">{plegados.has(grupo) ? "▸" : "▾"}</span>
+            {titulo}
+          </button>
+        ) : (
+          titulo
+        )}
       </th>
       <td colSpan={prevision.length} />
     </tr>
@@ -510,8 +538,8 @@ function Grilla({
               total,
               verde,
             )}
-            {separador("Gastos de las cuentas · débito, efectivo y billeteras")}
-            {egresos.map((c) => filaCategoria("egreso", c))}
+            {separador("Gastos de las cuentas · débito, efectivo y billeteras", "cuentas")}
+            {abierto("cuentas") && egresos.map((c) => filaCategoria("egreso", c))}
             {fila(
               "Subtotal gastos",
               (m: MesPrevision) => m.egresosCuentas,
@@ -546,8 +574,14 @@ function Grilla({
             )}
             {objetivos.length > 0 && (
               <>
-                {separador("Ahorro e inversión")}
-                {objetivos.map(([id, nombre]) => {
+                {separador("Ahorro e inversión", "ahorro")}
+                {fila(
+                  "Total ahorro",
+                  (m: MesPrevision) => m.ahorroDelMes,
+                  "font-semibold",
+                  azul,
+                )}
+                {abierto("ahorro") && objetivos.map(([id, nombre]) => {
                   const de = (m: MesPrevision) => m.objetivos.find((o) => o.id === id);
                   return (
                     <Fragment key={id}>
@@ -592,8 +626,8 @@ function Grilla({
             </tr>
             {hayTarjetas && (
               <>
-                {separador("Tarjetas de crédito · lo del mes se paga el mes siguiente")}
-                {enTarjeta.map((c) => filaCategoria("tarjeta", c))}
+                {separador("Tarjetas de crédito · lo del mes se paga el mes siguiente", "tarjetas")}
+                {abierto("tarjetas") && enTarjeta.map((c) => filaCategoria("tarjeta", c))}
                 {fila(
                   "Total mensual TC",
                   (m: MesPrevision) => m.consumoTarjetas,
@@ -608,8 +642,29 @@ function Grilla({
                   )}
               </>
             )}
-            {presupuestos.length > 0 && separador("Presupuestos")}
-            {presupuestos.map(([id, nombre]) => {
+            {presupuestos.length > 0 && (
+              <>
+                {separador("Presupuestos", "presupuestos")}
+                {fila(
+                  "Total presupuestos",
+                  (m: MesPrevision) => m.presupuestos.reduce((s, p) => s + p.monto, 0),
+                  "font-semibold",
+                )}
+                {fila(
+                  "· gastado",
+                  (m: MesPrevision) => m.presupuestos.reduce((s, p) => s + p.gastado, 0),
+                  "",
+                  rojo,
+                )}
+                {fila(
+                  "· resto",
+                  (m: MesPrevision) => m.presupuestos.reduce((s, p) => s + p.resto, 0),
+                  "",
+                  signo,
+                )}
+              </>
+            )}
+            {abierto("presupuestos") && presupuestos.map(([id, nombre]) => {
               const de = (m: MesPrevision) => m.presupuestos.find((p) => p.id === id);
               return (
                 <Fragment key={id}>
