@@ -11,6 +11,7 @@ import {
   type MesPrevision,
 } from "@/lib/finanzas/prevision";
 import type { Datos, Escenario, Mes } from "@/lib/finanzas/tipos";
+import { DetallePopup, type ContenidoDetalle } from "./detalle-popup";
 import { pesos } from "./formato";
 import { Ayuda, patrimonioDe, TOTALIZADORES } from "./totalizadores";
 
@@ -78,6 +79,7 @@ export function VistaPrevision({
   );
 
   const prevision = previsiones[seleccionado];
+  const nombresCuentas = useMemo(() => Object.fromEntries(datos.cuentas.map((c) => [c.id, c.nombre])), [datos.cuentas]);
   const opciones = [{ id: BASE, nombre: "Plan base" }, ...escenarios];
 
   return (
@@ -135,6 +137,7 @@ export function VistaPrevision({
           plan={vista === "comparar" ? prevision : undefined}
           hastaReal={hastaReal}
           subcategorias={subcategorias}
+          cuentas={nombresCuentas}
         />
       </div>
       <Balance plan={prevision} real={real} hastaReal={hastaReal} />
@@ -246,6 +249,7 @@ function Grilla({
   plan,
   hastaReal,
   subcategorias,
+  cuentas,
 }: {
   prevision: MesPrevision[];
   /** Para comparar: lo planificado de cada mes, que se muestra debajo de lo de `prevision`. */
@@ -253,7 +257,10 @@ function Grilla({
   /** Al comparar, los meses posteriores no tienen nada real todavía: solo se muestra lo planificado. */
   hastaReal?: Mes;
   subcategorias: Record<string, string>;
+  /** Nombre de cada cuenta, para el detalle. */
+  cuentas: Record<string, string>;
 }) {
+  const [detalle, setDetalle] = useState<ContenidoDetalle | null>(null);
   const sinReal = (m: MesPrevision) => Boolean(plan && hastaReal && m.mes > hastaReal);
   const [abiertas, setAbiertas] = useState<Set<string>>(new Set());
   const alternar = (clave: string) =>
@@ -291,10 +298,17 @@ function Grilla({
     valor: (m: MesPrevision) => number,
     clase = "",
     tono?: (v: number, i: number) => string,
+    abrir?: () => void,
   ) => (
     <tr key={titulo} className={clase}>
       <th scope="row" className={`${primera} font-normal`}>
-        {titulo}
+        {abrir ? (
+          <button type="button" onClick={abrir} className="text-left hover:underline" title="Ver el detalle">
+            {titulo}
+          </button>
+        ) : (
+          titulo
+        )}
       </th>
       {prevision.map((m, i) => {
         const v = valor(m);
@@ -318,15 +332,33 @@ function Grilla({
       <tr>
         <th scope="row" className={`${primera} font-normal`}>
           {conDetalle ? (
-            <button
-              type="button"
-              onClick={() => alternar(grupo)}
-              aria-expanded={abierta}
-              className="flex items-center gap-1.5 text-left hover:underline"
-            >
-              <span className="w-3 text-xs text-black/50 dark:text-white/50">{abierta ? "▾" : "▸"}</span>
-              {c}
-            </button>
+            <span className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => alternar(grupo)}
+                aria-expanded={abierta}
+                aria-label={abierta ? `Plegar ${c}` : `Desplegar ${c}`}
+                className="w-3 text-xs text-black/50 dark:text-white/50"
+              >
+                {abierta ? "▾" : "▸"}
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setDetalle({
+                    titulo: c,
+                    meses: prevision.map((m) => ({
+                      mes: m.mes,
+                      movimientos: (m.detalle[grupo] ?? []).flatMap((item) => item.movimientos),
+                    })),
+                  })
+                }
+                className="text-left hover:underline"
+                title="Ver las transacciones"
+              >
+                {c}
+              </button>
+            </span>
           ) : (
             <span className="pl-[1.125rem]">{c}</span>
           )}
@@ -390,7 +422,19 @@ function Grilla({
         ...delSub.map((f) => (
           <tr key={`${grupo}:${f.item.clave}`} className="bg-black/[0.02] dark:bg-white/[0.03]">
             <th scope="row" className={`${primera} ${sangria} font-normal`}>
-              <span className={subs.length > 1 && sub ? "pl-3" : ""}>{f.item.nombre}</span>
+              <button
+                type="button"
+                onClick={() =>
+                  setDetalle({
+                    titulo: f.item.nombre,
+                    meses: prevision.map((m) => ({ mes: m.mes, movimientos: f.meses.get(m.mes)?.movimientos ?? [] })),
+                  })
+                }
+                className={`text-left hover:underline ${subs.length > 1 && sub ? "pl-3" : ""}`}
+                title="Ver las transacciones"
+              >
+                {f.item.nombre}
+              </button>
               {sub && subs.length === 1 && <span className="ml-1.5 text-black/50 dark:text-white/50">· {sub}</span>}
             </th>
             {prevision.map((m) => {
@@ -435,6 +479,7 @@ function Grilla({
   return (
     <section>
       <h2 className="mb-3 text-lg font-semibold">Previsión mes a mes</h2>
+      {detalle && <DetallePopup contenido={detalle} cuentas={cuentas} alCerrar={() => setDetalle(null)} />}
       <div className="overflow-x-auto rounded-xl border border-black/10 dark:border-white/15">
         <table className="w-full text-sm">
           <thead>
@@ -570,6 +615,25 @@ function Grilla({
                     (m: MesPrevision) => de(m)?.monto ?? 0,
                     // Una línea arriba de cada presupuesto, para ver dónde termina el anterior.
                     "font-semibold [&>*]:border-t [&>*]:border-black/15 [&>*]:pt-3 dark:[&>*]:border-white/20",
+                    undefined,
+                    () =>
+                      setDetalle({
+                        titulo: `${nombre} (presupuesto)`,
+                        meses: prevision.flatMap((m) => {
+                          const p = de(m);
+                          return p
+                            ? [
+                                {
+                                  mes: m.mes,
+                                  movimientos: p.movimientos,
+                                  resumen: `Presupuesto $ ${pesos(p.monto)} · gastado $ ${pesos(p.gastado)} · ${
+                                    p.resto < 0 ? `te pasaste $ ${pesos(-p.resto)}` : `resta $ ${pesos(p.resto)}`
+                                  }`,
+                                },
+                              ]
+                            : [];
+                        }),
+                      }),
                   )}
                   {fila(
                     "· gastado",
@@ -637,8 +701,8 @@ function Grilla({
           <span className={`${MARCA_CUOTAS} px-1.5`}>123</span> incluye cuotas
         </span>
         <span>
-          <span className={`${MARCA_CUOTA_DETALLE} px-1.5`}>3/18 123</span> cuota (tocá ▸ en una categoría para ver el
-          detalle)
+          <span className={`${MARCA_CUOTA_DETALLE} px-1.5`}>3/18 123</span> cuota (tocá ▸ en una categoría para desplegarla, o su nombre
+          o el de un presupuesto para ver las transacciones)
         </span>
         <span>
           Lo comprado con tarjeta va en su grupo, en el mes en que cierra su resumen (el período del 23/10 al 19/11 es
