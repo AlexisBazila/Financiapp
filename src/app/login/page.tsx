@@ -11,6 +11,11 @@ async function AvisoConfirmacion({ searchParams }: { searchParams: PageProps<"/l
   return <p className="mb-4 text-sm text-red-600">El link de confirmación venció o ya se usó. Probá ingresar igual.</p>;
 }
 
+async function Formulario({ searchParams }: { searchParams: PageProps<"/login">["searchParams"] }) {
+  const { invitacion } = await searchParams;
+  return <FormularioLogin invitacion={typeof invitacion === "string" ? invitacion : undefined} />;
+}
+
 export default function Login({ searchParams }: PageProps<"/login">) {
   return (
     <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center px-4 py-12">
@@ -23,7 +28,9 @@ export default function Login({ searchParams }: PageProps<"/login">) {
       </Suspense>
       <div className={`${caja} p-5`}>
         {configSupabase() ? (
-          <FormularioLogin />
+          <Suspense fallback={<FormularioLogin />}>
+            <Formulario searchParams={searchParams} />
+          </Suspense>
         ) : (
           <p className="text-sm">
             Falta configurar Supabase (variables NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY).

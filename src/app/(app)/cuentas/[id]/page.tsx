@@ -106,7 +106,7 @@ export default async function Cuenta({ params, searchParams }: PageProps<"/cuent
           {cuenta.titular && <p className={`text-sm ${textoSuave}`}>👤 {cuenta.titular}</p>}
         </div>
         {opciones.cuentas.length > 0 && (
-          <NuevoMovimiento {...opciones} fechaSugerida={mes === actual ? hoy() : `${mes}-01`} />
+          <NuevoMovimiento {...opciones} cuentaSugerida={id} fechaSugerida={mes === actual ? hoy() : `${mes}-01`} />
         )}
       </div>
 
@@ -200,7 +200,11 @@ async function Tarjeta({
           {cuenta.titular && <p className={`text-sm ${textoSuave}`}>👤 {cuenta.titular}</p>}
         </div>
         {delCierre.opciones.cuentas.length > 0 && (
-          <NuevoMovimiento {...delCierre.opciones} fechaSugerida={enPeriodo(fecha) ? fecha : periodo.desde} />
+          <NuevoMovimiento
+            {...delCierre.opciones}
+            cuentaSugerida={id}
+            fechaSugerida={enPeriodo(fecha) ? fecha : periodo.desde}
+          />
         )}
       </div>
 
