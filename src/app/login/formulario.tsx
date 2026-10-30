@@ -4,8 +4,9 @@ import { useActionState, useState } from "react";
 import { boton, campo, etiqueta, textoSuave } from "../estilos";
 import { ingresar, registrarse, type EstadoLogin } from "./acciones";
 
-export function FormularioLogin() {
-  const [modo, setModo] = useState<"ingresar" | "registrarse">("ingresar");
+/** Con `invitacion` (del link que comparte un admin) arranca en "crear cuenta" con el código puesto. */
+export function FormularioLogin({ invitacion }: { invitacion?: string }) {
+  const [modo, setModo] = useState<"ingresar" | "registrarse">(invitacion ? "registrarse" : "ingresar");
   const [estadoIngreso, accionIngreso, ingresando] = useActionState<EstadoLogin, FormData>(ingresar, {});
   const [estadoRegistro, accionRegistro, registrando] = useActionState<EstadoLogin, FormData>(registrarse, {});
   const esIngreso = modo === "ingresar";
@@ -29,6 +30,22 @@ export function FormularioLogin() {
           className={campo}
         />
       </label>
+      {!esIngreso && (
+        <label className={etiqueta}>
+          Código de invitación
+          <input
+            name="invitacion"
+            required
+            defaultValue={invitacion}
+            autoComplete="off"
+            autoCapitalize="characters"
+            className={`${campo} font-mono uppercase`}
+          />
+          <span className={`text-xs ${textoSuave}`}>
+            La app es privada: te lo pasa quien administra tu hogar o la app.
+          </span>
+        </label>
+      )}
       {estado.error && <p className="text-sm text-red-600">{estado.error}</p>}
       {estado.aviso && <p className="text-sm text-green-700 dark:text-green-400">{estado.aviso}</p>}
       <button type="submit" disabled={pendiente} className={boton}>
