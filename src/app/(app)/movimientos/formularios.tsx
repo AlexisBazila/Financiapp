@@ -5,8 +5,8 @@ import type { Categoria } from "@/lib/datos/categorias";
 import type { Movimiento } from "@/lib/finanzas/tipos";
 import { boton, botonSecundario, campo, etiqueta } from "../../estilos";
 import { pesosExactos } from "../../formato";
-import { SelectorCategoria } from "../categorias/selector";
 import { CampoContraparte } from "./contraparte";
+import { CategoriaOReparto } from "./reparto";
 import { borrarMovimiento, guardarMovimiento, marcar, type Base } from "./acciones";
 
 interface Opcion {
@@ -52,6 +52,7 @@ function FormularioMovimiento({
   const [tipo, setTipo] = useState<string>(inicial && esPagoDeTarjeta(inicial) ? "pago_tarjeta" : (inicial?.tipo ?? tipoInicial));
   const esPago = tipo === "pago_tarjeta";
   const esTransferencia = tipo === "transferencia" || esPago;
+  const [total, setTotal] = useState(inicial ? pesosExactos(inicial.monto) : "");
   const [tarjeta, setTarjeta] = useState(inicial?.cuentaDestinoId ?? tarjetas[0]?.id);
   const vence = esPago && tarjeta ? aPagar?.[tarjeta] : undefined;
 
@@ -99,7 +100,8 @@ function FormularioMovimiento({
           inputMode="decimal"
           required
           placeholder="0"
-          defaultValue={inicial ? pesosExactos(inicial.monto) : undefined}
+          value={total}
+          onChange={(e) => setTotal(e.target.value)}
           className={campo}
         />
         {vence !== undefined && vence > 0 && (
@@ -149,11 +151,13 @@ function FormularioMovimiento({
           </select>
         </label>
       ) : (
-        <SelectorCategoria
+        <CategoriaOReparto
           key={tipo}
           categorias={categorias}
           tipo={tipo === "ingreso" ? "ingreso" : "egreso"}
-          valorInicial={inicial?.tipo === tipo ? inicial.categoriaId : undefined}
+          total={total}
+          inicial={inicial?.tipo === tipo ? inicial.categoriaId : undefined}
+          partesIniciales={inicial?.tipo === tipo ? inicial.partes : undefined}
         />
       )}
       {!esTransferencia && (

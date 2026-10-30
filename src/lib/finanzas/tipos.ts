@@ -99,6 +99,18 @@ export interface Movimiento {
   mesResumen?: Mes;
   /** Chequeado contra el extracto del banco o la tarjeta. No cambia la previsión. */
   conciliado?: boolean;
+  /**
+   * Reparto en varias categorías (un ticket con comida y limpieza): cada parte cuenta en su categoría y
+   * sus presupuestos; las partes suman `monto`. Sin reparto, todo es de `categoriaId`.
+   */
+  partes?: ParteMovimiento[];
+}
+
+export interface ParteMovimiento {
+  categoriaId?: string;
+  /** Categoría principal, como `Movimiento.categoria`. */
+  categoria?: string;
+  monto: Centavos;
 }
 
 export interface PlanCuotas {

@@ -471,6 +471,23 @@ describe("presupuestos", () => {
     origen: { tipo: "manual" },
   });
 
+  it("de un movimiento repartido cuenta solo la parte de sus categorías", () => {
+    const ticket: Movimiento = {
+      ...gasto("ticket", "2026-11-05", 100_000_00, "super"),
+      partes: [
+        { categoriaId: "super", categoria: "Alimentos", monto: 50_000_00 },
+        { categoriaId: "limpieza", categoria: "Hogar", monto: 50_000_00 },
+      ],
+    };
+    const datos: Datos = { ...vacio(), presupuestos: [{ ...viveres, monto: 50_000_00 }], movimientos: [ticket] };
+    const [nov] = calcularPrevision(datos, { desde: "2026-11", meses: 1 });
+    expect(nov.presupuestos[0]).toMatchObject({ gastado: 50_000_00, resto: 0 });
+    expect(nov.egresosPorCategoria).toMatchObject({ Alimentos: 50_000_00, Hogar: 50_000_00 });
+    expect(nov.egresos).toBe(100_000_00);
+    expect(nov.saldos.banco).toBe(-100_000_00);
+    expect(nov.detalle["egreso:Hogar"][0].movimientos[0].monto).toBe(50_000_00);
+  });
+
   it("descuenta lo gastado y prevé lo que resta", () => {
     const datos: Datos = {
       ...vacio(),

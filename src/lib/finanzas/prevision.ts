@@ -2,7 +2,18 @@ import { generarCuotasDeuda, generarCuotasPlan, generarCuotasPrestamo } from "./
 import { diasDelMes, fechaEnMes, mesDe, mesesEntre, rangoMeses, sumarMeses } from "./fechas";
 import { instanciarRecurrente } from "./recurrentes";
 import { cicloDe, resumenDeFecha } from "./tarjeta";
-import type { Centavos, Cuenta, Datos, Estado, Fecha, Mes, Movimiento, ObjetivoAhorro, Presupuesto } from "./tipos";
+import type {
+  Centavos,
+  Cuenta,
+  Datos,
+  Estado,
+  Fecha,
+  Mes,
+  Movimiento,
+  ObjetivoAhorro,
+  ParteMovimiento,
+  Presupuesto,
+} from "./tipos";
 
 /** Qué tan seguro es un monto: planificado, ya pasó, o ya pasó y se chequeó con el banco. */
 export type Certeza = "planificado" | "real" | "conciliado";
@@ -273,11 +284,13 @@ function itemDe(mov: Movimiento): Omit<DetalleItem, "monto" | "certeza" | "movim
   if (o.tipo === "cuotas") return { ...base, clave: `cuotas:${o.planId}`, cuota: `${o.numero}/${o.total}` };
   if (o.tipo === "prestamo") {
     // El número 0 es la plata del préstamo que entra.
-    if (o.numero === 0) return { ...base, nombre: mov.descripcion || base.nombre, clave: `prestamo:${o.prestamoId}:ingreso` };
+    if (o.numero === 0)
+      return { ...base, nombre: mov.descripcion || base.nombre, clave: `prestamo:${o.prestamoId}:ingreso` };
     return { ...base, clave: `prestamo:${o.prestamoId}`, cuota: `${o.numero}/${o.total}` };
   }
   if (o.tipo === "deuda") return { ...base, clave: `deuda:${o.deudaId}`, cuota: `${o.numero}/${o.total}` };
-  if (o.tipo === "recurrente") return { ...base, nombre: mov.descripcion || base.nombre, clave: `recurrente:${o.recurrenteId}` };
+  if (o.tipo === "recurrente")
+    return { ...base, nombre: mov.descripcion || base.nombre, clave: `recurrente:${o.recurrenteId}` };
   return { ...base, nombre: mov.descripcion || base.nombre, clave: mov.id };
 }
 
@@ -291,6 +304,37 @@ function juntarCuotas(a: string, b: string): string {
 /** Si el movimiento es de antes del día del saldo inicial de la cuenta, y entonces ya está incluido en él. */
 function yaEnElSaldo(mov: Movimiento, cuenta: Cuenta): boolean {
   return !cuenta.tarjeta && cuenta.saldoFecha !== undefined && mov.fecha <= cuenta.saldoFecha;
+}
+
+/** Las partes de un movimiento por categoría: las del reparto, o una sola con todo. */
+export function partesDe(mov: Movimiento): ParteMovimiento[] {
+  return mov.partes && mov.partes.length > 0
+    ? mov.partes
+    : [{ categoriaId: mov.categoriaId, categoria: mov.categoria, monto: mov.monto }];
+}
+
+/**
+ * Un movimiento repartido en categorías: el efecto con la categoría se divide en uno por parte. El primero
+ * lleva el cambio en el saldo; los demás solo suman a su categoría.
+ */
+function repartir(mov: Movimiento, efectos: Efecto[], cambio: number): Efecto[] {
+  if (!mov.partes || mov.partes.length < 2) return efectos;
+  return efectos.flatMap((e) => {
+    if (!e.flujo) return [e];
+    const flujo = e.flujo;
+    return mov.partes!.map((parte, i) => {
+      const monto = Math.round(parte.monto * cambio);
+      const signo = flujo.movimiento && flujo.movimiento.monto < 0 ? -1 : 1;
+      const parcial = {
+        ...flujo,
+        categoria: parte.categoria ?? "Sin categoría",
+        monto,
+        ...(flujo.item ? { item: { ...flujo.item, categoriaId: parte.categoriaId } } : {}),
+        ...(flujo.movimiento ? { movimiento: { ...flujo.movimiento, monto: signo * monto } } : {}),
+      };
+      return i === 0 ? { ...e, flujo: parcial } : { mes: e.mes, cuentaId: e.cuentaId, delta: 0, flujo: parcial };
+    });
+  });
 }
 
 /** El efecto en el saldo, o nada si ya está incluido en el saldo inicial de la cuenta. */
@@ -335,14 +379,34 @@ function efectosDe(mov: Movimiento, cuentas: Map<string, Cuenta>, desde: Mes): E
     ];
   }
 
-  const signo = mov.tipo === "ingreso" ? 1 : -1;
+  return repartir(
+    mov,
+    efectosDeGasto(mov, cuenta, desde, categoria, certeza, cuota, enPesos, item, movimiento),
+    cambioDe(cuenta),
+  );
+}
+
+/** Efectos de un gasto o ingreso (no transferencia), todo en `categoria`. */
+function efectosDeGasto(
+  mov: Movimiento,
+  cuenta: Cuenta,
+  desde: Mes,
+  categoria: string,
+  certeza: Certeza,
+  cuota: boolean,
+  enPesos: Centavos,
+  item: ReturnType<typeof itemDe>,
+  movimiento: (signo: number) => MovimientoDetalle,
+): Efecto[] {
+  const tipo = mov.tipo === "ingreso" ? "ingreso" : "egreso";
+  const signo = tipo === "ingreso" ? 1 : -1;
   if (!cuenta.tarjeta) {
     return [
       {
         mes: mesDe(mov.fecha),
         cuentaId: cuenta.id,
         ...enSaldo(mov, cuenta, signo * mov.monto),
-        flujo: { tipo: mov.tipo, categoria, monto: enPesos, certeza, cuota, item, movimiento: movimiento(1) },
+        flujo: { tipo, categoria, monto: enPesos, certeza, cuota, item, movimiento: movimiento(1) },
       },
     ];
   }
@@ -359,7 +423,7 @@ function efectosDe(mov: Movimiento, cuentas: Map<string, Cuenta>, desde: Mes): E
       delta: -signo * mov.monto,
       consumo: -signo * mov.monto,
       flujo: {
-        tipo: mov.tipo,
+        tipo,
         categoria,
         monto: enPesos,
         certeza,
@@ -503,7 +567,8 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
         delGrupo.set(e.flujo.item.clave, {
           ...e.flujo.item,
           // Varias cuotas de lo mismo en el mes: "3, 4/12".
-          cuota: previo?.cuota && e.flujo.item.cuota ? juntarCuotas(previo.cuota, e.flujo.item.cuota) : e.flujo.item.cuota,
+          cuota:
+            previo?.cuota && e.flujo.item.cuota ? juntarCuotas(previo.cuota, e.flujo.item.cuota) : e.flujo.item.cuota,
           monto: (previo?.monto ?? 0) + monto,
           movimientos: [...(previo?.movimientos ?? []), ...(e.flujo.movimiento ? [e.flujo.movimiento] : [])],
           certeza:
@@ -644,7 +709,6 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
   });
 }
 
-
 /** Fecha de vencimiento de la tarjeta que cae en `mes` (la del resumen del mes anterior, en general). */
 function vencimientoEn(tarjeta: Cuenta, mes: Mes): string {
   for (const resumen of [sumarMeses(mes, -1), mes, sumarMeses(mes, -2)]) {
@@ -676,25 +740,25 @@ function resumenPresupuesto(
   const categorias = new Set(p.categoriaIds);
   const elegidas = p.cuentaIds && new Set(p.cuentaIds);
   const delMes = movimientos
-    .filter(
-      (m) =>
-        m.tipo === "egreso" &&
-        m.categoriaId &&
-        categorias.has(m.categoriaId) &&
-        (!elegidas || elegidas.has(m.cuentaId)) &&
-        mesDeGasto(m, cuentas) === mes,
-    )
-    .map((m): MovimientoDetalle => {
+    .filter((m) => m.tipo === "egreso" && (!elegidas || elegidas.has(m.cuentaId)) && mesDeGasto(m, cuentas) === mes)
+    .flatMap((m): MovimientoDetalle[] => {
+      // De un movimiento repartido cuenta solo lo de las categorías del presupuesto.
+      const enCategorias = partesDe(m)
+        .filter((p) => p.categoriaId && categorias.has(p.categoriaId))
+        .reduce((total, p) => total + p.monto, 0);
+      if (enCategorias === 0) return [];
       const item = itemDe(m);
-      return {
-        id: m.id,
-        fecha: m.fecha,
-        descripcion: item.nombre,
-        cuentaId: m.cuentaId,
-        monto: Math.round(m.monto * (cuentas.get(m.cuentaId)?.cambio ?? 1)),
-        certeza: certezaDe(m),
-        ...(item.cuota ? { cuota: item.cuota } : {}),
-      };
+      return [
+        {
+          id: m.id,
+          fecha: m.fecha,
+          descripcion: item.nombre,
+          cuentaId: m.cuentaId,
+          monto: Math.round(enCategorias * (cuentas.get(m.cuentaId)?.cambio ?? 1)),
+          certeza: certezaDe(m),
+          ...(item.cuota ? { cuota: item.cuota } : {}),
+        },
+      ];
     });
   const gastado = delMes.reduce((total, m) => total + m.monto, 0);
   const monto = montoPresupuesto(p, mes);

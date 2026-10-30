@@ -54,6 +54,7 @@ export interface FilaMovimiento {
   origen: Origen;
   mes_resumen: string | null;
   conciliado: boolean;
+  reparto?: { categoria_id: string | null; monto: number }[] | null;
 }
 
 export interface FilaPlanCuotas {
@@ -160,6 +161,11 @@ export function aMovimiento(fila: FilaMovimiento): Movimiento {
     origen: fila.origen,
     mesResumen: fila.mes_resumen ?? undefined,
     conciliado: fila.conciliado,
+    ...(fila.reparto && fila.reparto.length > 1
+      ? {
+          partes: fila.reparto.map((p) => ({ categoriaId: p.categoria_id ?? undefined, monto: Number(p.monto) })),
+        }
+      : {}),
   };
 }
 
