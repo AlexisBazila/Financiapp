@@ -18,8 +18,12 @@ export interface EstadoTarjeta {
   periodo: PeriodoTarjeta;
   /** Compras menos devoluciones del período, incluidas las cuotas que caen en él y lo planificado. */
   consumoPeriodo: Centavos;
+  /** Lo mismo, contando solo lo conciliado. */
+  consumoPeriodoConciliado: Centavos;
   /** Lo que se debe a `fecha`: resúmenes cerrados sin pagar más el consumo del período en curso. */
   deudaTotal: Centavos;
+  /** Deuda total contando solo compras y pagos conciliados (sin los pagos automáticos previstos). */
+  deudaTotalConciliada: Centavos;
   /** Cuotas de resúmenes posteriores al período en curso, que también ocupan el límite. */
   cuotasFuturas: Centavos;
   limite?: Centavos;
@@ -67,8 +71,10 @@ export function estadoTarjeta(datos: Datos, tarjetaId: string, fecha: Fecha, des
   const compras = todos.filter((m) => m.cuentaId === tarjetaId && m.tipo !== "transferencia");
   // Mismo criterio que la previsión: los resúmenes que cerraron antes de `desde` están en el saldo inicial.
   const contadas = compras.filter((m) => mesDe(cicloDe(tarjeta, resumenDe(tarjeta, m)).cierre) >= desde);
-  const deResumenes = (filtro: (resumen: Mes) => boolean) =>
-    contadas.filter((m) => filtro(resumenDe(tarjeta, m))).reduce((total, m) => total + importe(m), 0);
+  const deResumenes = (filtro: (resumen: Mes) => boolean, conciliadas = false) =>
+    contadas
+      .filter((m) => filtro(resumenDe(tarjeta, m)) && (!conciliadas || m.conciliado))
+      .reduce((total, m) => total + importe(m), 0);
 
   const consumoPeriodo = deResumenes((r) => r === actual);
   const cuotasFuturas = contadas
@@ -76,12 +82,17 @@ export function estadoTarjeta(datos: Datos, tarjetaId: string, fecha: Fecha, des
     .reduce((total, m) => total + importe(m), 0);
 
   // Pagos hasta `fecha`: los cargados (transferencias a la tarjeta) y los automáticos que prevé la previsión.
-  const cargados = datos.movimientos
-    .filter((m) => m.tipo === "transferencia" && m.fecha <= fecha && mesDe(m.fecha) >= desde)
-    .reduce(
-      (total, m) => total + (m.cuentaDestinoId === tarjetaId ? m.monto : m.cuentaId === tarjetaId ? -m.monto : 0),
-      0,
-    );
+  const pagosCargados = (conciliados = false) =>
+    datos.movimientos
+      .filter(
+        (m) =>
+          m.tipo === "transferencia" && m.fecha <= fecha && mesDe(m.fecha) >= desde && (!conciliados || m.conciliado),
+      )
+      .reduce(
+        (total, m) => total + (m.cuentaDestinoId === tarjetaId ? m.monto : m.cuentaId === tarjetaId ? -m.monto : 0),
+        0,
+      );
+  const cargados = pagosCargados();
   const prevision =
     mesDe(fecha) >= desde
       ? calcularPrevision({ ...datos, presupuestos: [] }, { desde, meses: mesesEntre(desde, mesDe(fecha)) + 1 })
@@ -96,7 +107,9 @@ export function estadoTarjeta(datos: Datos, tarjetaId: string, fecha: Fecha, des
   return {
     periodo,
     consumoPeriodo,
+    consumoPeriodoConciliado: deResumenes((r) => r === actual, true),
     deudaTotal,
+    deudaTotalConciliada: tarjeta.saldoInicial + deResumenes((r) => r <= actual, true) - pagosCargados(true),
     cuotasFuturas,
     limite,
     disponible: limite === undefined ? undefined : limite - Math.max(0, deudaTotal) - cuotasFuturas,

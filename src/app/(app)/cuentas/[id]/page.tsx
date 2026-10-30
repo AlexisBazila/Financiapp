@@ -16,6 +16,44 @@ import { movimientosDelMes } from "../../movimientos/opciones";
 import { FormularioCiclo } from "../formularios";
 import { diaMes, TotalesTarjeta } from "../totales-tarjeta";
 
+/** Saldo al cierre del mes y lo que cambió en el mes. */
+function Saldos({
+  titulo,
+  ayuda,
+  moneda,
+  inicio,
+  cierre,
+}: {
+  titulo: string;
+  ayuda: string;
+  moneda: TipoCuenta["moneda"];
+  inicio: number;
+  cierre: number;
+}) {
+  const periodo = cierre - inicio;
+  return (
+    <div className="flex flex-wrap justify-between gap-4" title={ayuda}>
+      <div>
+        <div className="text-sm font-medium">{titulo}</div>
+        <div className={`text-sm ${textoSuave}`}>Saldo al cierre del mes</div>
+        <div className="text-2xl font-semibold tabular-nums">
+          {simbolo(moneda)} {pesosExactos(cierre)}
+        </div>
+      </div>
+      <div className="text-right">
+        <div className="text-sm">&nbsp;</div>
+        <div className={`text-sm ${textoSuave}`}>Período</div>
+        <div
+          className={`text-xl font-semibold tabular-nums ${periodo >= 0 ? "text-green-700 dark:text-green-400" : "text-red-700 dark:text-red-400"}`}
+        >
+          {periodo > 0 ? "+" : periodo < 0 ? "−" : ""}
+          {simbolo(moneda)} {pesosExactos(Math.abs(periodo))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default async function Cuenta({ params, searchParams }: PageProps<"/cuentas/[id]">) {
   const [{ id }, { mes: pedido }] = await Promise.all([params, searchParams]);
   const actual = mesDe(hoy());
@@ -36,17 +74,26 @@ export default async function Cuenta({ params, searchParams }: PageProps<"/cuent
 
   // Saldo según la previsión, que parte de los saldos iniciales del mes de inicio. Sin presupuestos:
   // acá interesa lo cargado, no lo que se estima gastar.
-  let saldos: { inicio: number; cierre: number } | undefined;
+  // La versión conciliada cuenta solo lo marcado como conciliado: el saldo que muestra el banco.
+  let saldos: { inicio: number; cierre: number; inicioConciliado: number; cierreConciliado: number } | undefined;
   if (mes >= hogar.mesInicio) {
-    const prevision = calcularPrevision(
-      { ...datos, presupuestos: [] },
-      { desde: hogar.mesInicio, meses: mesesEntre(hogar.mesInicio, mes) + 1 },
-    );
-    const cierre = prevision[prevision.length - 1].saldos[id];
-    const inicio = prevision.length > 1 ? prevision[prevision.length - 2].saldos[id] : cuenta.saldoInicial;
-    saldos = { inicio, cierre };
+    const deLaCuenta = (soloConciliados: boolean) => {
+      const prevision = calcularPrevision(
+        { ...datos, presupuestos: [] },
+        {
+          desde: hogar.mesInicio,
+          meses: mesesEntre(hogar.mesInicio, mes) + 1,
+          ...(soloConciliados ? { estados: ["real"], soloConciliados } : {}),
+        },
+      );
+      const cierre = prevision[prevision.length - 1].saldos[id];
+      const inicio = prevision.length > 1 ? prevision[prevision.length - 2].saldos[id] : cuenta.saldoInicial;
+      return { inicio, cierre };
+    };
+    const todo = deLaCuenta(false);
+    const conciliado = deLaCuenta(true);
+    saldos = { ...todo, inicioConciliado: conciliado.inicio, cierreConciliado: conciliado.cierre };
   }
-  const periodo = saldos ? saldos.cierre - saldos.inicio : 0;
 
   return (
     <div className="flex flex-col gap-6">
@@ -66,22 +113,21 @@ export default async function Cuenta({ params, searchParams }: PageProps<"/cuent
       <SelectorMes mes={mes} actual={actual} ruta={`/cuentas/${id}`} />
 
       {saldos ? (
-        <div className={`${caja} flex flex-wrap justify-between gap-4 p-4`}>
-          <div>
-            <div className={`text-sm ${textoSuave}`}>Saldo al cierre del mes</div>
-            <div className="text-2xl font-semibold tabular-nums">
-              {simbolo(cuenta.moneda)} {pesosExactos(saldos.cierre)}
-            </div>
-          </div>
-          <div className="text-right">
-            <div className={`text-sm ${textoSuave}`}>Período</div>
-            <div
-              className={`text-xl font-semibold tabular-nums ${periodo >= 0 ? "text-green-700 dark:text-green-400" : "text-red-700 dark:text-red-400"}`}
-            >
-              {periodo > 0 ? "+" : periodo < 0 ? "−" : ""}
-              {simbolo(cuenta.moneda)} {pesosExactos(Math.abs(periodo))}
-            </div>
-          </div>
+        <div className={`${caja} grid gap-4 p-4 sm:grid-cols-2`}>
+          <Saldos
+            titulo="Planificado"
+            ayuda="Todo lo cargado y previsto del mes, confirmado o no"
+            moneda={cuenta.moneda}
+            inicio={saldos.inicio}
+            cierre={saldos.cierre}
+          />
+          <Saldos
+            titulo="Conciliado (real)"
+            ayuda="Solo los movimientos marcados como conciliados: lo que ya figura en el banco"
+            moneda={cuenta.moneda}
+            inicio={saldos.inicioConciliado}
+            cierre={saldos.cierreConciliado}
+          />
         </div>
       ) : (
         <p className={`text-sm ${textoSuave}`}>
@@ -139,10 +185,9 @@ async function Tarjeta({
   const lista = [...expandir(datos, sumarMeses(mes, -1), mes), ...pagos]
     .filter(deLaTarjeta)
     .sort((a, b) => b.fecha.localeCompare(a.fecha) || a.descripcion.localeCompare(b.descripcion));
-  const consumo = lista.reduce(
-    (total, m) => total + (m.tipo === "egreso" ? m.monto : m.tipo === "ingreso" ? -m.monto : 0),
-    0,
-  );
+  const importe = (m: Movimiento) => (m.tipo === "egreso" ? m.monto : m.tipo === "ingreso" ? -m.monto : 0);
+  const consumo = lista.reduce((total, m) => total + importe(m), 0);
+  const consumoConciliado = lista.filter((m) => m.conciliado).reduce((total, m) => total + importe(m), 0);
 
   return (
     <div className="flex flex-col gap-6">
@@ -155,10 +200,7 @@ async function Tarjeta({
           {cuenta.titular && <p className={`text-sm ${textoSuave}`}>👤 {cuenta.titular}</p>}
         </div>
         {delCierre.opciones.cuentas.length > 0 && (
-          <NuevoMovimiento
-            {...delCierre.opciones}
-            fechaSugerida={enPeriodo(fecha) ? fecha : periodo.desde}
-          />
+          <NuevoMovimiento {...delCierre.opciones} fechaSugerida={enPeriodo(fecha) ? fecha : periodo.desde} />
         )}
       </div>
 
@@ -180,10 +222,18 @@ async function Tarjeta({
               este período; las de antes o después del cierre están en el período anterior o el siguiente.
             </div>
           </div>
-          <div className="text-right">
+          <div className="ml-auto flex flex-col items-end">
             <div className={`text-sm ${textoSuave}`}>Consumo del período</div>
-            <div className={`text-xl font-semibold tabular-nums ${consumo > 0 ? "text-red-600 dark:text-red-400" : ""}`}>
+            <div
+              className={`text-xl font-semibold tabular-nums ${consumo > 0 ? "text-red-600 dark:text-red-400" : ""}`}
+            >
               {consumo > 0 ? "−" : ""}$ {pesosExactos(Math.abs(consumo))}
+            </div>
+            <div className="text-sm tabular-nums" title="Solo compras marcadas como conciliadas">
+              <span className={textoSuave}>Conciliado: </span>
+              <span className="font-medium">
+                {consumoConciliado > 0 ? "−" : ""}$ {pesosExactos(Math.abs(consumoConciliado))}
+              </span>
             </div>
           </div>
         </div>

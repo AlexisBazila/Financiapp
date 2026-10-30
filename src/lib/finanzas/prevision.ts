@@ -161,6 +161,8 @@ export interface OpcionesPrevision {
    * presupuestos, lo que falta de los objetivos ni el pago automático de las tarjetas: queda solo lo real.
    */
   estados?: Estado[];
+  /** Solo los movimientos reales ya conciliados (con `estados: ["real"]`): el saldo según el banco. */
+  soloConciliados?: boolean;
   /**
    * Mes actual. Lo que resta de un presupuesto se prevé como gasto solo desde este mes: en los meses
    * pasados, lo que no se gastó no se va a gastar. Sin `mesActual`, se prevé en todos.
@@ -392,7 +394,7 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
   const cuentas = new Map(datos.cuentas.map((c) => [c.id, c]));
 
   const todos = expandir(datos, opciones.desde, hasta);
-  const movimientos = todos.filter((m) => estados.has(m.estado));
+  const movimientos = todos.filter((m) => estados.has(m.estado) && (!opciones.soloConciliados || m.conciliado));
   const efectos: Efecto[] = movimientos.flatMap((m) => efectosDe(m, cuentas, opciones.desde));
 
   for (const c of datos.cuentas) {
