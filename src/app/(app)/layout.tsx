@@ -1,9 +1,9 @@
 import Image from "next/image";
 import Link from "next/link";
-import { Suspense } from "react";
+import { Suspense, type ReactNode } from "react";
 import { actualizarCotizaciones, monedasAActualizar } from "@/lib/datos/bcra";
 import { requerirUsuario } from "@/lib/supabase/servidor";
-import { textoSuave } from "../estilos";
+import { caja, textoSuave } from "../estilos";
 import { salir } from "../login/acciones";
 import { MenuLateral, MenuSuperior } from "./navegacion";
 
@@ -33,6 +33,21 @@ async function ActualizarCotizaciones() {
   return null;
 }
 
+/** Si el hogar está suspendido (o la cuenta no tiene hogar), no se muestra nada de la app. */
+async function ConAcceso({ children }: { children: ReactNode }) {
+  const { supabase } = await requerirUsuario();
+  const { data: hogar } = await supabase.rpc("mi_hogar");
+  if (hogar) return children;
+  return (
+    <div className={`${caja} mx-auto max-w-md p-6`}>
+      <h1 className="text-lg font-semibold">Sin acceso</h1>
+      <p className={`mt-2 text-sm ${textoSuave}`}>
+        Tu cuenta no tiene un hogar activo. Si te parece un error, hablá con quien administra la app.
+      </p>
+    </div>
+  );
+}
+
 export default function LayoutApp({ children }: LayoutProps<"/">) {
   return (
     <div className="flex flex-1 flex-col lg:flex-row">
@@ -56,7 +71,9 @@ export default function LayoutApp({ children }: LayoutProps<"/">) {
         <ActualizarCotizaciones />
       </Suspense>
       <main className="mx-auto w-full max-w-6xl min-w-0 px-4 py-8 sm:px-8">
-        <Suspense fallback={<p className={textoSuave}>Cargando…</p>}>{children}</Suspense>
+        <Suspense fallback={<p className={textoSuave}>Cargando…</p>}>
+          <ConAcceso>{children}</ConAcceso>
+        </Suspense>
       </main>
     </div>
   );
