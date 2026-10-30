@@ -21,6 +21,37 @@ export interface Base {
   mesResumen?: string;
 }
 
+type Supabase = Awaited<ReturnType<typeof requerirUsuario>>["supabase"];
+
+/**
+ * Reparto en varias categorías, si se eligió: una categoría y un monto por parte, que tienen que sumar
+ * el total. Sin reparto devuelve null.
+ */
+async function leerReparto(
+  supabase: Supabase,
+  form: FormData,
+  total: number,
+  tipo: string,
+): Promise<{ partes: { categoria_id: string; monto: number }[] } | { error: string } | null> {
+  if (form.get("repartir") !== "on") return null;
+  const ids = form.getAll("categoria_id").map(String);
+  const montos = form.getAll("reparto_monto").map((v) => pesosACentavos(String(v)));
+  if (ids.length < 2) return null;
+  if (ids.some((id) => !id)) return { error: "Elegí la categoría de cada parte." };
+  if (montos.some((m) => !m || m <= 0)) return { error: "Poné el monto de cada parte." };
+  const suma = montos.reduce<number>((t, m) => t + (m ?? 0), 0);
+  if (suma !== total) {
+    const $ = (c: number) => (c / 100).toLocaleString("es-AR", { minimumFractionDigits: 2 });
+    return { error: `Las partes suman $ ${$(suma)} y el total es $ ${$(total)}.` };
+  }
+  if (new Set(ids).size !== ids.length) return { error: "Cada parte tiene que tener una categoría distinta." };
+  const { data } = await supabase.from("categorias").select("id, tipo").in("id", ids);
+  if (!data || data.length !== ids.length || data.some((c) => c.tipo !== tipo)) {
+    return { error: `Elegí categorías de ${tipo === "ingreso" ? "ingresos" : "gastos"}.` };
+  }
+  return { partes: ids.map((id, i) => ({ categoria_id: id, monto: montos[i]! })) };
+}
+
 function mensaje(error: { code?: string; message: string }): string {
   if (error.code === "23505") return "Ese movimiento ya estaba cargado; recargá la página.";
   return `No se pudo guardar: ${error.message}`;
@@ -57,6 +88,8 @@ export async function guardarMovimiento(base: Base | null, _: Resultado, form: F
       ? { categoria_id: null, categoria: null }
       : await categoriaElegida(supabase, form, tipo === "ingreso" ? "ingreso" : "egreso");
   if ("error" in categoria) return categoria;
+  const reparto = tipo === "transferencia" ? null : await leerReparto(supabase, form, monto, tipo);
+  if (reparto && "error" in reparto) return reparto;
 
   const fila = {
     tipo,
@@ -67,6 +100,7 @@ export async function guardarMovimiento(base: Base | null, _: Resultado, form: F
     ...categoria,
     descripcion: texto(form, "descripcion") || (pagoDeTarjeta ? "Pago de tarjeta" : ""),
     contraparte: tipo === "transferencia" ? null : texto(form, "contraparte").slice(0, 80) || null,
+    reparto: reparto?.partes ?? null,
     estado,
     // En otra moneda solo gastos e ingresos (por ejemplo, una compra en dólares con la tarjeta).
     moneda: tipo !== "transferencia" && texto(form, "moneda") === "USD" ? "USD" : null,

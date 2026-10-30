@@ -216,7 +216,12 @@ function Fila({
   const estado = situacion(m);
   const s = signo(m, cuentaId);
   const color = colores(s, m.estado === "real");
-  const ruta = m.categoriaId ? rutaCategoria(categorias, m.categoriaId) : m.categoria;
+  const nombreCategoria = (id?: string, nombre?: string) => (id ? rutaCategoria(categorias, id) : nombre);
+  const ruta = m.partes
+    ? m.partes
+        .map((p) => `${nombreCategoria(p.categoriaId, p.categoria) ?? "Sin categoría"} $ ${pesosExactos(p.monto)}`)
+        .join(" + ")
+    : nombreCategoria(m.categoriaId, m.categoria);
   const categoria = m.categoriaId ? categorias.get(m.categoriaId) : undefined;
   const padre = categoria?.padreId ? categorias.get(categoria.padreId) : undefined;
   // El ícono de la subcategoría o, si no tiene, el de su categoría.

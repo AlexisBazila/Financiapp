@@ -30,4 +30,15 @@ describe("movimientos en otra moneda", () => {
     expect(m.monto).toBe(12_99);
     expect(m.original).toBeUndefined();
   });
+
+  it("con reparto, convierten cada parte y siguen sumando el total", () => {
+    const reparto = [
+      { categoria_id: "comida", monto: 3_33 },
+      { categoria_id: "limpieza", monto: 3_33 },
+      { categoria_id: "otros", monto: 3_33 },
+    ];
+    const m = aMovimiento({ ...fila, monto: 9_99, moneda: "USD", reparto }, { USD: 1450.37 });
+    expect(m.partes?.reduce((s, p) => s + p.monto, 0)).toBe(m.monto);
+    expect(m.partes?.map((p) => p.original)).toEqual([3_33, 3_33, 3_33]);
+  });
 });
