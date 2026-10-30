@@ -59,7 +59,7 @@ export default async function Cuenta({ params, searchParams }: PageProps<"/cuent
           {cuenta.titular && <p className={`text-sm ${textoSuave}`}>👤 {cuenta.titular}</p>}
         </div>
         {opciones.cuentas.length > 0 && (
-          <NuevoMovimiento {...opciones} fechaSugerida={mes === actual ? hoy() : `${mes}-01`} />
+          <NuevoMovimiento {...opciones} cuentaSugerida={id} fechaSugerida={mes === actual ? hoy() : `${mes}-01`} />
         )}
       </div>
 
@@ -157,6 +157,7 @@ async function Tarjeta({
         {delCierre.opciones.cuentas.length > 0 && (
           <NuevoMovimiento
             {...delCierre.opciones}
+            cuentaSugerida={id}
             fechaSugerida={enPeriodo(fecha) ? fecha : periodo.desde}
           />
         )}
@@ -182,7 +183,9 @@ async function Tarjeta({
           </div>
           <div className="text-right">
             <div className={`text-sm ${textoSuave}`}>Consumo del período</div>
-            <div className={`text-xl font-semibold tabular-nums ${consumo > 0 ? "text-red-600 dark:text-red-400" : ""}`}>
+            <div
+              className={`text-xl font-semibold tabular-nums ${consumo > 0 ? "text-red-600 dark:text-red-400" : ""}`}
+            >
               {consumo > 0 ? "−" : ""}$ {pesosExactos(Math.abs(consumo))}
             </div>
           </div>

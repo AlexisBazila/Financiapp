@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useId, useState, useTransition } from "react";
 import { arbol, etiqueta, type Categoria, type TipoCategoria } from "@/lib/datos/categorias";
 import { boton, botonSecundario, campo, etiqueta as claseEtiqueta } from "../../estilos";
 import { crearCategoriaRapida } from "./acciones";
@@ -18,9 +18,28 @@ export function Punto({ color, className = "" }: { color: string; className?: st
   );
 }
 
+/** Sin tildes ni mayúsculas, para buscar "limpieza" con "LIMPI" o "cafe" con "Café". */
+const normalizar = (t: string) =>
+  t
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+
+interface Opcion {
+  id: string;
+  /** Lo que se muestra en la lista. */
+  texto: string;
+  /** Lo que se muestra en el campo una vez elegida. */
+  elegida: string;
+  color?: string;
+  hija?: boolean;
+  /** Texto donde se busca. */
+  busqueda: string;
+}
+
 /**
- * Lista de categorías de un tipo, con sus subcategorías, y la opción de crear una nueva sin salir
- * del formulario. Envía `categoria_id`.
+ * Categoría de un tipo, con sus subcategorías: se elige tecleando para filtrar la lista, y se puede
+ * crear una nueva sin salir del formulario. Envía `categoria_id`.
  */
 export function SelectorCategoria({
   categorias,
@@ -36,41 +55,137 @@ export function SelectorCategoria({
   const [nuevas, setNuevas] = useState<Categoria[]>([]);
   const [valor, setValor] = useState(valorInicial);
   const [creando, setCreando] = useState(false);
+  const [nombreNueva, setNombreNueva] = useState("");
+  const [consulta, setConsulta] = useState<string | null>(null);
+  const [marcada, setMarcada] = useState(0);
+  const lista = useId();
   const todas = [...categorias, ...nuevas.filter((n) => !categorias.some((c) => c.id === n.id))];
   const ramas = arbol(todas, tipo);
   const elegida = todas.find((c) => c.id === valor);
 
+  const opciones: Opcion[] = [{ id: "", texto: "Sin categoría", elegida: "", busqueda: "sin categoria" }];
+  for (const { categoria, hijas } of ramas) {
+    opciones.push({
+      id: categoria.id,
+      texto: etiqueta(categoria),
+      elegida: etiqueta(categoria),
+      color: categoria.color,
+      busqueda: normalizar(categoria.nombre),
+    });
+    for (const h of hijas) {
+      opciones.push({
+        id: h.id,
+        texto: etiqueta(h),
+        elegida: `${etiqueta(h)} · ${categoria.nombre}`,
+        color: h.color,
+        hija: true,
+        busqueda: normalizar(`${h.nombre} ${categoria.nombre}`),
+      });
+    }
+  }
+  const palabras = normalizar(consulta ?? "")
+    .split(/\s+/)
+    .filter(Boolean);
+  const visibles = [
+    ...opciones.filter((o) => palabras.every((p) => o.busqueda.includes(p))),
+    {
+      id: NUEVA,
+      texto: consulta ? `＋ Crear "${consulta.trim()}"…` : "＋ Nueva categoría…",
+      elegida: "",
+      busqueda: "",
+    },
+  ];
+  const abierta = consulta !== null;
+  const actual = Math.min(marcada, visibles.length - 1);
+  const textoElegida = opciones.find((o) => o.id === valor)?.elegida ?? "";
+
+  function elegir(o: Opcion) {
+    if (o.id === NUEVA) {
+      setNombreNueva(consulta?.trim() ?? "");
+      setCreando(true);
+    } else setValor(o.id);
+    setConsulta(null);
+  }
+
   return (
     <>
-      <label className={claseEtiqueta}>
-        {texto}
-        <span className="relative flex items-center">
-          {elegida && <Punto color={elegida.color} className="pointer-events-none absolute left-3" />}
-          <select
-            name="categoria_id"
-            value={valor}
-            onChange={(e) => (e.target.value === NUEVA ? setCreando(true) : setValor(e.target.value))}
-            className={`${campo} w-full ${elegida ? "pl-8" : ""}`}
-          >
-            <option value="">Sin categoría</option>
-            {ramas.map(({ categoria, hijas }) => (
-              <optgroup key={categoria.id} label={etiqueta(categoria)}>
-                <option value={categoria.id}>{etiqueta(categoria)} (general)</option>
-                {hijas.map((h) => (
-                  <option key={h.id} value={h.id}>
-                    {h.icono ? `${h.icono} ` : ""}
-                    {h.nombre}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-            <option value={NUEVA}>＋ Nueva categoría…</option>
-          </select>
-        </span>
-      </label>
+      <div className={claseEtiqueta}>
+        <label htmlFor={`${lista}-campo`}>{texto}</label>
+        <input type="hidden" name="categoria_id" value={valor} />
+        <div className="relative flex items-center">
+          {elegida && !abierta && <Punto color={elegida.color} className="pointer-events-none absolute left-3" />}
+          <input
+            id={`${lista}-campo`}
+            role="combobox"
+            aria-expanded={abierta}
+            aria-controls={lista}
+            aria-autocomplete="list"
+            autoComplete="off"
+            placeholder={abierta ? "Buscar…" : "Sin categoría"}
+            value={abierta ? consulta : textoElegida}
+            onFocus={() => {
+              setConsulta("");
+              setMarcada(0);
+            }}
+            onBlur={() => setConsulta(null)}
+            onChange={(e) => {
+              setConsulta(e.target.value);
+              setMarcada(0);
+            }}
+            onKeyDown={(e) => {
+              if (!abierta) return;
+              if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                e.preventDefault();
+                const paso = e.key === "ArrowDown" ? 1 : -1;
+                setMarcada((actual + paso + visibles.length) % visibles.length);
+              } else if (e.key === "Enter") {
+                e.preventDefault();
+                elegir(visibles[actual]);
+                e.currentTarget.blur();
+              } else if (e.key === "Escape") {
+                e.preventDefault();
+                e.currentTarget.blur();
+              }
+            }}
+            className={`${campo} w-full ${elegida && !abierta ? "pl-8" : ""}`}
+          />
+          {abierta && (
+            <ul
+              id={lista}
+              role="listbox"
+              className="absolute top-full right-0 left-0 z-40 mt-1 max-h-64 overflow-auto rounded-lg border border-black/15 bg-background py-1 shadow-lg dark:border-white/20"
+            >
+              {visibles.map((o, i) => (
+                <li
+                  key={o.id || "ninguna"}
+                  role="option"
+                  aria-selected={i === actual}
+                  // mousedown para elegir antes de que el campo pierda el foco y cierre la lista.
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    elegir(o);
+                    (document.activeElement as HTMLElement | null)?.blur();
+                  }}
+                  onMouseEnter={() => setMarcada(i)}
+                  className={`flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm ${
+                    i === actual ? "bg-black/5 dark:bg-white/10" : ""
+                  } ${o.hija ? "pl-8" : ""} ${o.id === valor ? "font-medium" : ""}`}
+                >
+                  {o.color && !o.hija && <Punto color={o.color} />}
+                  <span>{o.texto}</span>
+                  {o.hija && palabras.length > 0 && (
+                    <span className="text-xs opacity-60">{o.elegida.split(" · ").at(-1)}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
       {creando && (
         <NuevaCategoria
           tipo={tipo}
+          nombreInicial={nombreNueva}
           principales={ramas.map((r) => r.categoria)}
           padreSugerido={elegida ? (elegida.padreId ?? elegida.id) : ""}
           alCrear={(c) => {
@@ -87,18 +202,20 @@ export function SelectorCategoria({
 
 function NuevaCategoria({
   tipo,
+  nombreInicial,
   principales,
   padreSugerido,
   alCrear,
   alCancelar,
 }: {
   tipo: TipoCategoria;
+  nombreInicial: string;
   principales: Categoria[];
   padreSugerido: string;
   alCrear: (c: Categoria) => void;
   alCancelar: () => void;
 }) {
-  const [nombre, setNombre] = useState("");
+  const [nombre, setNombre] = useState(nombreInicial);
   const [padreId, setPadreId] = useState(padreSugerido);
   const [icono, setIcono] = useState("");
   const [error, setError] = useState("");
