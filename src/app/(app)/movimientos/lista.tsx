@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Fragment } from "react";
 import { rutaCategoria, type Categoria } from "@/lib/datos/categorias";
+import { simbolo } from "@/lib/datos/monedas";
 import { sumarMeses } from "@/lib/finanzas/fechas";
 import type { Movimiento } from "@/lib/finanzas/tipos";
 import { caja, textoSuave } from "../../estilos";
@@ -125,8 +126,8 @@ export function Leyenda() {
           cuenta, pero todavía no pasó.
         </li>
         <li>
-          <Chip clase={situacion({ estado: "real" }).chip}>Sin conciliar</Chip> Ya pasó, falta chequearlo con el
-          resumen del banco o la tarjeta.
+          <Chip clase={situacion({ estado: "real" }).chip}>Sin conciliar</Chip> Ya pasó, falta chequearlo con el resumen
+          del banco o la tarjeta.
         </li>
         <li>
           <Chip clase={situacion({ estado: "real", conciliado: true }).chip}>Conciliado ✓</Chip> Ya pasó y coincide con
@@ -253,8 +254,8 @@ function Fila({
         </span>
         {cuota && (
           <Chip clase={CHIP_CUOTA}>
-            {cuota.tipo === "prestamo" ? "Préstamo" : cuota.tipo === "deuda" ? "Deuda · cuota" : "Cuota"} {cuota.numero}/
-            {cuota.total}
+            {cuota.tipo === "prestamo" ? "Préstamo" : cuota.tipo === "deuda" ? "Deuda · cuota" : "Cuota"} {cuota.numero}
+            /{cuota.total}
           </Chip>
         )}
         {pagoDeTarjeta && (
@@ -271,6 +272,11 @@ function Fila({
         <Chip clase={estado.chip}>{estado.texto}</Chip>
         <span className={`ml-auto w-32 text-right font-medium tabular-nums ${color.monto}`}>
           {s > 0 ? "+" : s < 0 ? "−" : ""}$ {pesosExactos(m.monto)}
+          {m.original && (
+            <span className="block text-xs font-normal opacity-70" title="Se pasa a pesos con la cotización del día">
+              {simbolo(m.original.moneda)} {pesosExactos(m.original.monto)}
+            </span>
+          )}
         </span>
       </div>
       <div className="pl-14">

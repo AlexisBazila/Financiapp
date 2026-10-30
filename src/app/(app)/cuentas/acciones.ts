@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { actualizarCotizaciones } from "@/lib/datos/bcra";
 import { entero, pesosACentavos, texto } from "@/lib/datos/formularios";
 import { esMoneda } from "@/lib/datos/monedas";
 import { requerirUsuario } from "@/lib/supabase/servidor";
@@ -106,7 +107,10 @@ export async function guardarCiclo(
 
   const { error } = await supabase
     .from("ciclos_tarjeta")
-    .upsert({ cuenta_id: cuentaId, mes: mes ?? cierre.slice(0, 7), cierre, vencimiento }, { onConflict: "cuenta_id,mes" });
+    .upsert(
+      { cuenta_id: cuentaId, mes: mes ?? cierre.slice(0, 7), cierre, vencimiento },
+      { onConflict: "cuenta_id,mes" },
+    );
   if (error) return { error: `No se pudo guardar: ${error.message}` };
   revalidatePath("/", "layout");
   return { ok: true };
@@ -138,6 +142,12 @@ const CASAS: Record<string, string> = { oficial: "oficial", bolsa: "MEP", blue: 
  */
 export async function traerCotizacion(moneda: string, casa: string): Promise<Resultado> {
   const { supabase } = await requerirUsuario();
+  if (casa === "bcra") {
+    const guardadas = await actualizarCotizaciones(supabase, [moneda]);
+    if (guardadas.length === 0) return { error: "No se pudo traer la cotización del BCRA. Cargala a mano." };
+    revalidatePath("/", "layout");
+    return { ok: true };
+  }
   if (!CASAS[casa]) return { error: "Elegí de dónde traerla." };
   const url =
     moneda === "USD"

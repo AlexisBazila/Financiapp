@@ -93,15 +93,29 @@ function FormularioMovimiento({
         ))}
       </div>
       <label className={etiqueta}>
-        Monto ($)
-        <input
-          name="monto"
-          inputMode="decimal"
-          required
-          placeholder="0"
-          defaultValue={inicial ? pesosExactos(inicial.monto) : undefined}
-          className={campo}
-        />
+        Monto
+        <span className="flex gap-2">
+          {!esTransferencia && (
+            <select
+              name="moneda"
+              aria-label="Moneda"
+              defaultValue={inicial?.original?.moneda ?? "ARS"}
+              title="En dólares se pasa a pesos con la cotización del día"
+              className={`${campo} w-24`}
+            >
+              <option value="ARS">$</option>
+              <option value="USD">US$</option>
+            </select>
+          )}
+          <input
+            name="monto"
+            inputMode="decimal"
+            required
+            placeholder="0"
+            defaultValue={inicial ? pesosExactos(inicial.original?.monto ?? inicial.monto) : undefined}
+            className={`${campo} w-full`}
+          />
+        </span>
         {vence !== undefined && vence > 0 && (
           <span className="text-xs font-normal opacity-70">Vence este mes: $ {pesosExactos(vence)}</span>
         )}

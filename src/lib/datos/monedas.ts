@@ -1,5 +1,5 @@
 /** Monedas que puede tener una cuenta, con su símbolo. */
-export const MONEDAS = { ARS: "$", USD: "US$", EUR: "€" } as const;
+export const MONEDAS = { ARS: "$", USD: "US$", EUR: "€", BRL: "R$" } as const;
 
 export type Moneda = keyof typeof MONEDAS;
 

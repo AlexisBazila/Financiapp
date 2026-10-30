@@ -304,7 +304,7 @@ export function FormularioCotizacion({ moneda, valor }: { moneda: string; valor?
     empezar(async () => {
       setTraida(await traerCotizacion(moneda, casa));
     });
-  const casas = moneda === "USD" ? [["oficial", "Oficial (BCRA)"], ["bolsa", "MEP"], ["blue", "Blue"]] : [["oficial", "Oficial"]];
+  const casas = [["bcra", "BCRA (se actualiza sola)"], ...(moneda === "USD" ? [["bolsa", "MEP"], ["blue", "Blue"]] : [])];
 
   return (
     <div className="flex flex-col gap-3">
@@ -326,7 +326,7 @@ export function FormularioCotizacion({ moneda, valor }: { moneda: string; valor?
         <Mensaje estado={estado} ok="Guardado." />
       </form>
       <div className="flex flex-wrap items-center gap-2 text-sm">
-        <span>Traer cotización de compra:</span>
+        <span>Traer cotización:</span>
         {casas.map(([casa, nombre]) => (
           <button
             key={casa}
