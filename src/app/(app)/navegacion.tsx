@@ -121,6 +121,16 @@ const SECCIONES = [
       </>,
     ),
   },
+  {
+    href: "/accesos",
+    nombre: "Accesos",
+    icono: trazo(
+      <>
+        <rect x="4" y="10.5" width="16" height="10" rx="2" />
+        <path d="M8 10.5V7a4 4 0 0 1 8 0v3.5M12 14.5v2" />
+      </>,
+    ),
+  },
 ];
 
 const activa = (ruta: string, href: string) => (href === "/" ? ruta === "/" : ruta.startsWith(href));
