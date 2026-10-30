@@ -1,6 +1,7 @@
 // Conversión entre las filas de Supabase (snake_case, ver supabase/migrations) y el modelo del motor.
 
 import type {
+  Centavos,
   CicloTarjeta,
   Cuenta,
   CuotaDeuda,
@@ -8,6 +9,7 @@ import type {
   Escenario,
   Movimiento,
   Origen,
+  ParteMovimiento,
   PlanCuotas,
   Prestamo,
   ObjetivoAhorro,
@@ -55,6 +57,7 @@ export interface FilaMovimiento {
   mes_resumen: string | null;
   conciliado: boolean;
   reparto?: { categoria_id: string | null; monto: number }[] | null;
+  moneda?: string | null;
 }
 
 export interface FilaPlanCuotas {
@@ -145,13 +148,22 @@ export function aCuenta(fila: FilaCuenta, ciclos: FilaCiclo[], cambios: Record<s
   return cuenta;
 }
 
-export function aMovimiento(fila: FilaMovimiento): Movimiento {
+/**
+ * Con `cambios` (pesos por unidad de cada moneda), un movimiento cargado en otra moneda pasa a pesos con
+ * la cotización actual; sin cotización cargada se cuenta 1 a 1, como las cuentas.
+ */
+export function aMovimiento(fila: FilaMovimiento, cambios: Record<string, number> = {}): Movimiento {
+  const monto = Number(fila.monto);
+  const enOtraMoneda = fila.moneda && fila.moneda !== "ARS" && fila.tipo !== "transferencia";
+  const cambio = enOtraMoneda ? (cambios[fila.moneda!] ?? 1) : 1;
+  const convertido = Math.round(monto * cambio);
   return {
     id: fila.id,
     fecha: fila.fecha,
     descripcion: fila.descripcion,
     tipo: fila.tipo,
-    monto: Number(fila.monto),
+    monto: convertido,
+    ...(enOtraMoneda ? { original: { moneda: fila.moneda!, monto } } : {}),
     cuentaId: fila.cuenta_id,
     cuentaDestinoId: fila.cuenta_destino_id ?? undefined,
     categoria: fila.categoria ?? undefined,
@@ -163,10 +175,27 @@ export function aMovimiento(fila: FilaMovimiento): Movimiento {
     conciliado: fila.conciliado,
     ...(fila.reparto && fila.reparto.length > 1
       ? {
-          partes: fila.reparto.map((p) => ({ categoriaId: p.categoria_id ?? undefined, monto: Number(p.monto) })),
+          partes: partesConvertidas(fila.reparto, cambio, convertido),
         }
       : {}),
   };
+}
+
+/**
+ * Las partes del reparto se guardan en la moneda en que se cargó el movimiento: pasan a la de la cuenta
+ * con la misma cotización, y la última se lleva el redondeo para que sigan sumando el total.
+ */
+function partesConvertidas(
+  reparto: { categoria_id: string | null; monto: number }[],
+  cambio: number,
+  total: Centavos,
+): ParteMovimiento[] {
+  let resto = total;
+  return reparto.map((p, i) => {
+    const monto = i === reparto.length - 1 ? resto : Math.round(Number(p.monto) * cambio);
+    resto -= monto;
+    return { categoriaId: p.categoria_id ?? undefined, monto, ...(cambio !== 1 ? { original: Number(p.monto) } : {}) };
+  });
 }
 
 export function aPlanCuotas(fila: FilaPlanCuotas): PlanCuotas {

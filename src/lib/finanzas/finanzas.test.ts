@@ -578,6 +578,19 @@ describe("presupuestos", () => {
     const [nov] = calcularPrevision(datos, { desde: "2026-11", meses: 1 });
     expect(nov.celdas["egreso:Alimentos"]).toEqual({ certeza: "planificado", cuotas: false });
   });
+
+  it("con soloConciliados cuenta solo lo conciliado", () => {
+    const datos: Datos = {
+      ...vacio(),
+      movimientos: [
+        { ...gasto("a", "2026-11-05", 10_00, "super"), conciliado: true },
+        gasto("b", "2026-11-06", 20_00, "super"),
+        gasto("c", "2026-11-07", 40_00, "super", "planificado"),
+      ],
+    };
+    const [nov] = calcularPrevision(datos, { desde: "2026-11", meses: 1, estados: ["real"], soloConciliados: true });
+    expect(nov.egresos).toBe(10_00);
+  });
 });
 
 describe("estado de la tarjeta", () => {
@@ -633,6 +646,17 @@ describe("estado de la tarjeta", () => {
     expect(estado.deudaTotal).toBe(2_000_000_00 + 250_000_00);
     expect(estado.cuotasFuturas).toBe(200_000_00);
     expect(estado.disponible).toBe(4_000_000_00 - 2_250_000_00 - 200_000_00);
+  });
+
+  it("la versión conciliada cuenta solo las compras conciliadas", () => {
+    const base = datos();
+    const conSuper = {
+      ...base,
+      movimientos: base.movimientos.map((m) => (m.id === "super" ? { ...m, conciliado: true } : m)),
+    };
+    const estado = estadoTarjeta(conSuper, "visa", "2026-10-26", "2026-10");
+    expect(estado.consumoPeriodoConciliado).toBe(150_000_00);
+    expect(estado.deudaTotalConciliada).toBe(150_000_00);
   });
 
   it("después del vencimiento descuenta el pago automático", () => {

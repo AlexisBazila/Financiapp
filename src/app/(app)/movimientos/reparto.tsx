@@ -38,7 +38,7 @@ export function CategoriaOReparto({
 }) {
   const [filas, setFilas] = useState<Fila[] | null>(() =>
     partesIniciales && partesIniciales.length > 1
-      ? partesIniciales.map((p) => nueva(p.categoriaId, pesosExactos(p.monto)))
+      ? partesIniciales.map((p) => nueva(p.categoriaId, pesosExactos(p.original ?? p.monto)))
       : null,
   );
 

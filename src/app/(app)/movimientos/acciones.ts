@@ -102,6 +102,8 @@ export async function guardarMovimiento(base: Base | null, _: Resultado, form: F
     contraparte: tipo === "transferencia" ? null : texto(form, "contraparte").slice(0, 80) || null,
     reparto: reparto?.partes ?? null,
     estado,
+    // En otra moneda solo gastos e ingresos (por ejemplo, una compra en dólares con la tarjeta).
+    moneda: tipo !== "transferencia" && texto(form, "moneda") === "USD" ? "USD" : null,
     // Lo que no pasó todavía no puede estar conciliado.
     conciliado: estado === "real" && form.get("conciliado") === "on",
   };

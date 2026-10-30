@@ -111,7 +111,7 @@ export async function cargarHogar(supabase: SupabaseClient): Promise<DatosHogar>
   const datos: Datos = {
     cuentas: filasCuentas.map((c) => aCuenta(c, filasCiclos, cambios)),
     movimientos: sinError<FilaMovimiento[]>(movimientos).map((f) => {
-      const m = conCategoria(aMovimiento(f), porId);
+      const m = conCategoria(aMovimiento(f, cambios), porId);
       return m.partes ? { ...m, partes: m.partes.map((p) => conCategoria(p, porId)) } : m;
     }),
     planesCuotas: sinError<FilaPlanCuotas[]>(planes).map((f) => conCategoria(aPlanCuotas(f), porId)),

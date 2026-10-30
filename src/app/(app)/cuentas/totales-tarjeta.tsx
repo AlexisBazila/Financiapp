@@ -8,6 +8,16 @@ export const diaMes = (fecha: Fecha) => `${Number(fecha.slice(8, 10))}/${Number(
 
 const deuda = (centavos: number) => `${centavos > 0 ? "−" : ""}$ ${pesosExactos(Math.abs(centavos))}`;
 
+/** El mismo total contando solo lo conciliado: lo que ya figura en el resumen del banco. */
+function Conciliado({ centavos }: { centavos: number }) {
+  return (
+    <div className="mt-1 text-sm tabular-nums" title="Solo compras y pagos marcados como conciliados">
+      <span className={textoSuave}>Conciliado: </span>
+      <span className="font-medium">{deuda(centavos)}</span>
+    </div>
+  );
+}
+
 /**
  * Deuda total, deuda del período y lo que queda del límite. El disponible va de verde a rojo a medida que
  * se acerca al límite.
@@ -26,6 +36,7 @@ export function TotalesTarjeta({ estado, compacto = false }: { estado: EstadoTar
         <div className={`text-sm ${textoSuave}`}>Deuda total</div>
         <div className={`${numero} ${estado.deudaTotal > 0 ? rojo : ""}`}>{deuda(estado.deudaTotal)}</div>
         <div className={`text-xs ${textoSuave}`}>resúmenes sin pagar + período en curso</div>
+        <Conciliado centavos={estado.deudaTotalConciliada} />
       </div>
       <div>
         <div className={`text-sm ${textoSuave}`}>Deuda del período</div>
@@ -33,6 +44,7 @@ export function TotalesTarjeta({ estado, compacto = false }: { estado: EstadoTar
         <div className={`text-xs ${textoSuave}`}>
           del {diaMes(periodo.desde)} al {diaMes(periodo.cierre)} · vence el {diaMes(periodo.vencimiento)}
         </div>
+        <Conciliado centavos={estado.consumoPeriodoConciliado} />
       </div>
       <div className={compacto ? "col-span-2 sm:col-span-1" : ""}>
         {limite !== undefined && disponible !== undefined ? (

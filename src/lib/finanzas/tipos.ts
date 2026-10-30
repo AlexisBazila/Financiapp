@@ -100,6 +100,11 @@ export interface Movimiento {
   /** Chequeado contra el extracto del banco o la tarjeta. No cambia la previsión. */
   conciliado?: boolean;
   /**
+   * Si se cargó en otra moneda (una compra en dólares con la tarjeta): el monto en esa moneda. `monto`
+   * es su valor en la moneda de la cuenta con la cotización del día.
+   */
+  original?: { moneda: string; monto: Centavos };
+  /**
    * Reparto en varias categorías (un ticket con comida y limpieza): cada parte cuenta en su categoría y
    * sus presupuestos; las partes suman `monto`. Sin reparto, todo es de `categoriaId`.
    */
@@ -111,6 +116,8 @@ export interface ParteMovimiento {
   /** Categoría principal, como `Movimiento.categoria`. */
   categoria?: string;
   monto: Centavos;
+  /** En un movimiento cargado en otra moneda: lo que se cargó en esa moneda, como `Movimiento.original`. */
+  original?: Centavos;
 }
 
 export interface PlanCuotas {
