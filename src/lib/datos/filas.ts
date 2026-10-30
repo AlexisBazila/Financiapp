@@ -54,6 +54,7 @@ export interface FilaMovimiento {
   origen: Origen;
   mes_resumen: string | null;
   conciliado: boolean;
+  moneda?: string | null;
 }
 
 export interface FilaPlanCuotas {
@@ -144,13 +145,20 @@ export function aCuenta(fila: FilaCuenta, ciclos: FilaCiclo[], cambios: Record<s
   return cuenta;
 }
 
-export function aMovimiento(fila: FilaMovimiento): Movimiento {
+/**
+ * Con `cambios` (pesos por unidad de cada moneda), un movimiento cargado en otra moneda pasa a pesos con
+ * la cotización actual; sin cotización cargada se cuenta 1 a 1, como las cuentas.
+ */
+export function aMovimiento(fila: FilaMovimiento, cambios: Record<string, number> = {}): Movimiento {
+  const monto = Number(fila.monto);
+  const enOtraMoneda = fila.moneda && fila.moneda !== "ARS" && fila.tipo !== "transferencia";
   return {
     id: fila.id,
     fecha: fila.fecha,
     descripcion: fila.descripcion,
     tipo: fila.tipo,
-    monto: Number(fila.monto),
+    monto: enOtraMoneda ? Math.round(monto * (cambios[fila.moneda!] ?? 1)) : monto,
+    ...(enOtraMoneda ? { original: { moneda: fila.moneda!, monto } } : {}),
     cuentaId: fila.cuenta_id,
     cuentaDestinoId: fila.cuenta_destino_id ?? undefined,
     categoria: fila.categoria ?? undefined,

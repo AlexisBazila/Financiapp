@@ -7,13 +7,9 @@ import type { Cuenta, Movimiento } from "@/lib/finanzas/tipos";
 import { requerirUsuario } from "@/lib/supabase/servidor";
 import { caja, textoSuave } from "../../estilos";
 import { pesosExactos } from "../../formato";
+import { MONEDAS_BCRA } from "@/lib/datos/bcra";
 import { simbolo } from "@/lib/datos/monedas";
-import {
-  BotonArchivar,
-  FormularioCotizacion,
-  FormularioCuenta,
-  FormularioMesInicio,
-} from "./formularios";
+import { BotonArchivar, FormularioCotizacion, FormularioCuenta, FormularioMesInicio } from "./formularios";
 import { Ayuda, TOTALIZADORES } from "../../totalizadores";
 
 const verde = "text-green-700 dark:text-green-400";
@@ -124,7 +120,9 @@ export default async function Cuentas() {
   const { supabase } = await requerirUsuario();
   const { hogar, datos, cuentasActivas, cotizaciones } = await cargarHogar(supabase);
   const activas = datos.cuentas.filter((c) => cuentasActivas.includes(c.id));
-  const monedas = [...new Set(activas.flatMap((c) => (c.moneda ? [c.moneda] : [])))];
+  const monedas = [
+    ...new Set([...MONEDAS_BCRA, ...activas.flatMap((c) => (c.moneda && c.moneda !== "ARS" ? [c.moneda] : []))]),
+  ];
   const titulares = [...new Set(datos.cuentas.map((c) => c.titular).filter((t): t is string => Boolean(t)))].sort();
   const fecha = hoy();
   const mesActual = mesDe(fecha);
@@ -249,8 +247,8 @@ export default async function Cuentas() {
           <div>
             <h2 className="text-lg font-semibold">Tipos de cambio</h2>
             <p className={`text-sm ${textoSuave}`}>
-              Las cuentas en otras monedas se suman en pesos con este valor. Podés cargarlo a mano o traer la cotización
-              de compra del día.
+              Las cuentas y los gastos en otras monedas se suman en pesos con este valor. Con BCRA se actualiza solo
+              todos los días a partir de las 17 hs; también podés cargarlo a mano o usar el MEP o el blue.
             </p>
           </div>
           {monedas.map((m) => {
@@ -259,6 +257,11 @@ export default async function Cuentas() {
               <div key={m} className="flex flex-col gap-2">
                 <h3 className="font-medium">
                   {m}
+                  {cotizacion && cotizacion.fuente === "BCRA" && (
+                    <span className="ml-2 rounded-full bg-green-700/10 px-2 py-0.5 text-xs font-normal text-green-800 dark:text-green-300">
+                      automática
+                    </span>
+                  )}
                   {cotizacion ? (
                     <span className={`ml-2 text-sm font-normal ${textoSuave}`}>
                       $ {cotizacion.valor.toLocaleString("es-AR")} · {cotizacion.fuente} ·{" "}

@@ -99,6 +99,11 @@ export interface Movimiento {
   mesResumen?: Mes;
   /** Chequeado contra el extracto del banco o la tarjeta. No cambia la previsión. */
   conciliado?: boolean;
+  /**
+   * Si se cargó en otra moneda (una compra en dólares con la tarjeta): el monto en esa moneda. `monto`
+   * es su valor en la moneda de la cuenta con la cotización del día.
+   */
+  original?: { moneda: string; monto: Centavos };
 }
 
 export interface PlanCuotas {

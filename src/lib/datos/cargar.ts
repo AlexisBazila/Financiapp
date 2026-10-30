@@ -110,7 +110,7 @@ export async function cargarHogar(supabase: SupabaseClient): Promise<DatosHogar>
 
   const datos: Datos = {
     cuentas: filasCuentas.map((c) => aCuenta(c, filasCiclos, cambios)),
-    movimientos: sinError<FilaMovimiento[]>(movimientos).map((f) => conCategoria(aMovimiento(f), porId)),
+    movimientos: sinError<FilaMovimiento[]>(movimientos).map((f) => conCategoria(aMovimiento(f, cambios), porId)),
     planesCuotas: sinError<FilaPlanCuotas[]>(planes).map((f) => conCategoria(aPlanCuotas(f), porId)),
     prestamos: sinError<FilaPrestamo[]>(prestamos).map((f) => conCategoria(aPrestamo(f), porId)),
     recurrentes: sinError<FilaRecurrente[]>(recurrentes).map((f) => conCategoria(aRecurrente(f), porId)),
