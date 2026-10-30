@@ -22,14 +22,14 @@ const botonSalir = (
 export default function LayoutApp({ children }: LayoutProps<"/">) {
   return (
     <div className="flex flex-1 flex-col lg:flex-row">
-      <aside className="sticky top-0 z-10 hidden h-screen w-56 shrink-0 flex-col gap-8 bg-black px-4 py-6 lg:flex">
+      <aside className="sticky top-0 z-10 hidden h-screen w-56 shrink-0 flex-col gap-8 bg-black px-4 py-6 lg:flex print:hidden">
         <div className="px-2">{logo}</div>
         <nav aria-label="Secciones" className="flex-1">
           <MenuLateral />
         </nav>
         <div className="px-3">{botonSalir}</div>
       </aside>
-      <header className="sticky top-0 z-10 bg-black lg:hidden">
+      <header className="sticky top-0 z-10 bg-black lg:hidden print:hidden">
         <div className="flex items-center justify-between px-4 py-3">
           {logo}
           {botonSalir}
