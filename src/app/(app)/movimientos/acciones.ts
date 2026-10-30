@@ -69,7 +69,7 @@ export async function guardarMovimiento(base: Base | null, _: Resultado, form: F
     contraparte: tipo === "transferencia" ? null : texto(form, "contraparte").slice(0, 80) || null,
     estado,
     // Lo que no pasó todavía no puede estar conciliado.
-    ...(estado === "real" ? {} : { conciliado: false }),
+    conciliado: estado === "real" && form.get("conciliado") === "on",
   };
   const { error } = base?.id
     ? await supabase.from("movimientos").update(fila).eq("id", base.id)
