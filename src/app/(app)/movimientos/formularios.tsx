@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useEffect, useOptimistic, useRef, useState, useTransition } from "react";
+import { useActionState, useEffect, useOptimistic, useRef, useState, useSyncExternalStore, useTransition } from "react";
+import { createPortal } from "react-dom";
 import type { Categoria } from "@/lib/datos/categorias";
 import type { Movimiento } from "@/lib/finanzas/tipos";
 import { boton, botonSecundario, campo, etiqueta } from "../../estilos";
@@ -34,10 +35,13 @@ function FormularioMovimiento({
   base,
   inicial,
   tipoInicial = "egreso",
+  cuentaSugerida,
   alGuardar,
   alCancelar,
 }: Opciones & {
   fechaSugerida: string;
+  /** Cuenta elegida de entrada en un movimiento nuevo (la de la página donde se carga). */
+  cuentaSugerida?: string;
   base?: Base;
   inicial?: Movimiento;
   /** Tipo con el que arranca un movimiento nuevo. */
@@ -49,10 +53,16 @@ function FormularioMovimiento({
   const tarjetas = cuentas.filter((c) => c.tarjeta);
   const esPagoDeTarjeta = (m: Movimiento) =>
     m.tipo === "transferencia" && tarjetas.some((t) => t.id === m.cuentaDestinoId);
-  const [tipo, setTipo] = useState<string>(inicial && esPagoDeTarjeta(inicial) ? "pago_tarjeta" : (inicial?.tipo ?? tipoInicial));
+  const [tipo, setTipo] = useState<string>(
+    inicial && esPagoDeTarjeta(inicial) ? "pago_tarjeta" : (inicial?.tipo ?? tipoInicial),
+  );
   const esPago = tipo === "pago_tarjeta";
   const esTransferencia = tipo === "transferencia" || esPago;
-  const [tarjeta, setTarjeta] = useState(inicial?.cuentaDestinoId ?? tarjetas[0]?.id);
+  const sugeridaEsTarjeta = tarjetas.some((t) => t.id === cuentaSugerida);
+  const [tarjeta, setTarjeta] = useState(
+    inicial?.cuentaDestinoId ?? (sugeridaEsTarjeta ? cuentaSugerida : undefined) ?? tarjetas[0]?.id,
+  );
+  const [real, setReal] = useState(!inicial || inicial.estado === "real");
   const vence = esPago && tarjeta ? aPagar?.[tarjeta] : undefined;
 
   const alGuardarActual = useRef(alGuardar);
@@ -112,7 +122,13 @@ function FormularioMovimiento({
       </label>
       <label className={etiqueta}>
         {esTransferencia ? "Desde" : "Cuenta"}
-        <select name="cuenta_id" required defaultValue={inicial?.cuentaId} key={tipo} className={campo}>
+        <select
+          name="cuenta_id"
+          required
+          defaultValue={inicial?.cuentaId ?? (esPago && sugeridaEsTarjeta ? undefined : cuentaSugerida)}
+          key={tipo}
+          className={campo}
+        >
           {(esPago ? cuentas.filter((c) => !c.tarjeta) : cuentas).map((c) => (
             <option key={c.id} value={c.id}>
               {c.nombre}
@@ -174,11 +190,27 @@ function FormularioMovimiento({
       </label>
       <label className={etiqueta}>
         Estado
-        <select name="estado" defaultValue={inicial && inicial.estado !== "real" ? "planificado" : "real"} className={campo}>
+        <select
+          name="estado"
+          value={real ? "real" : "planificado"}
+          onChange={(e) => setReal(e.target.value === "real")}
+          className={campo}
+        >
           <option value="real">Confirmado (ya pasó)</option>
           <option value="planificado">Planificado (sin confirmar)</option>
         </select>
       </label>
+      {real && (
+        <label className="flex cursor-pointer items-center gap-2 self-end pb-2 text-sm">
+          <input
+            type="checkbox"
+            name="conciliado"
+            defaultChecked={inicial ? Boolean(inicial.conciliado) : true}
+            className="size-4 accent-green-700"
+          />
+          Conciliado (ya figura en el banco)
+        </label>
+      )}
       <div className="flex flex-wrap items-center gap-3 sm:col-span-3">
         <button type="submit" disabled={pendiente || cuentas.length === 0} className={boton}>
           Guardar
@@ -192,62 +224,92 @@ function FormularioMovimiento({
   );
 }
 
-/** Botón "Nuevo movimiento" que despliega el formulario. */
-const RAPIDOS = [
-  { tipo: "egreso", nombre: "− Gasto", clase: "bg-red-600 text-white hover:bg-red-700" },
-  { tipo: "ingreso", nombre: "＋ Ingreso", clase: "bg-green-700 text-white hover:bg-green-800" },
-  { tipo: "transferencia", nombre: "⇄ Transferencia", clase: "bg-sky-700 text-white hover:bg-sky-800" },
-];
-
 /**
- * Botón para cargar un movimiento. Con `rapido`, un botón por tipo (gasto, ingreso, transferencia) que
- * abre el formulario con ese tipo elegido.
+ * Botón redondo "+" fijo abajo a la derecha que abre el formulario en una ventana, para cargar un
+ * movimiento desde cualquier punto de la página sin volver arriba.
  */
 export function NuevoMovimiento({
   fechaSugerida,
-  rapido = false,
+  cuentaSugerida,
   ...opciones
-}: Opciones & { fechaSugerida: string; rapido?: boolean }) {
-  const [abierto, setAbierto] = useState<string | null>(null);
-  const [guardados, setGuardados] = useState(0);
+}: Opciones & { fechaSugerida: string; cuentaSugerida?: string }) {
+  const [abierto, setAbierto] = useState(false);
+  // Cambia en cada apertura para que el formulario arranque vacío.
+  const [vez, setVez] = useState(0);
+  const [guardado, setGuardado] = useState(false);
+  const ventana = useRef<HTMLDialogElement>(null);
+  // El portal necesita document.body: solo del lado del navegador.
+  const montado = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
+  useEffect(() => {
+    if (!guardado) return;
+    const t = setTimeout(() => setGuardado(false), 2500);
+    return () => clearTimeout(t);
+  }, [guardado]);
 
-  if (opciones.cuentas.length === 0) return null;
-  if (!abierto) {
-    return (
-      <div className="flex flex-wrap items-center gap-2">
-        {rapido ? (
-          RAPIDOS.map((r) => (
-            <button
-              key={r.tipo}
-              type="button"
-              onClick={() => setAbierto(r.tipo)}
-              className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${r.clase}`}
-            >
-              {r.nombre}
-            </button>
-          ))
-        ) : (
-          <button type="button" onClick={() => setAbierto("egreso")} className={boton}>
-            ＋ Nuevo movimiento
-          </button>
+  if (opciones.cuentas.length === 0 || !montado) return null;
+  const abrir = () => {
+    setVez((v) => v + 1);
+    setAbierto(true);
+    ventana.current?.showModal();
+  };
+  const cerrar = () => ventana.current?.close();
+
+  // En un portal, para que el botón fijo no dependa de dónde está ubicado en la página.
+  return createPortal(
+    <>
+      <div className="fixed right-5 bottom-5 z-30 flex items-center gap-3 print:hidden">
+        {guardado && (
+          <span className="rounded-full bg-green-700 px-3 py-1.5 text-sm text-white shadow-lg">Guardado ✓</span>
         )}
-        {guardados > 0 && <p className="text-sm text-green-700 dark:text-green-400">Guardado.</p>}
+        <button
+          type="button"
+          onClick={abrir}
+          aria-label="Nuevo movimiento"
+          title="Nuevo movimiento"
+          className="flex size-14 items-center justify-center rounded-full bg-foreground text-3xl leading-none text-background shadow-xl transition-transform hover:scale-105 active:scale-95"
+        >
+          +
+        </button>
       </div>
-    );
-  }
-  return (
-    <div className="w-full rounded-xl border border-black/10 p-5 dark:border-white/15">
-      <FormularioMovimiento
-        {...opciones}
-        tipoInicial={abierto}
-        fechaSugerida={fechaSugerida}
-        alGuardar={() => {
-          setAbierto(null);
-          setGuardados((n) => n + 1);
-        }}
-        alCancelar={() => setAbierto(null)}
-      />
-    </div>
+      <dialog
+        ref={ventana}
+        onClose={() => setAbierto(false)}
+        onClick={(e) => e.target === ventana.current && cerrar()}
+        className="m-auto max-h-[90dvh] w-[min(46rem,calc(100vw-1.5rem))] rounded-xl border border-black/10 bg-background p-0 text-foreground shadow-xl backdrop:bg-black/40 dark:border-white/15"
+      >
+        <div className="flex flex-col gap-4 p-5">
+          <div className="flex items-start justify-between gap-4">
+            <h3 className="text-lg font-semibold">Nuevo movimiento</h3>
+            <button
+              type="button"
+              onClick={cerrar}
+              aria-label="Cerrar"
+              className="rounded-lg px-2 text-xl leading-none hover:bg-black/5 dark:hover:bg-white/10"
+            >
+              ×
+            </button>
+          </div>
+          {abierto && (
+            <FormularioMovimiento
+              key={vez}
+              {...opciones}
+              fechaSugerida={fechaSugerida}
+              cuentaSugerida={cuentaSugerida}
+              alGuardar={() => {
+                setGuardado(true);
+                cerrar();
+              }}
+              alCancelar={cerrar}
+            />
+          )}
+        </div>
+      </dialog>
+    </>,
+    document.body,
   );
 }
 

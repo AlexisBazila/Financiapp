@@ -41,11 +41,7 @@ export default async function Prevision() {
     <>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-2xl font-semibold">Previsión</h1>
-        <NuevoMovimiento
-          {...movimientosDelMes(datosHogar, mesActual, mesActual).opciones}
-          fechaSugerida={fecha}
-          rapido
-        />
+        <NuevoMovimiento {...movimientosDelMes(datosHogar, mesActual, mesActual).opciones} fechaSugerida={fecha} />
       </div>
       <VistaPrevision
         datos={datos}
