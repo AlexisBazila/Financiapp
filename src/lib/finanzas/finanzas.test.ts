@@ -488,6 +488,23 @@ describe("presupuestos", () => {
     expect(nov.detalle["egreso:Hogar"][0].movimientos[0].monto).toBe(50_000_00);
   });
 
+  it("las partes de la misma categoría principal quedan cada una en su subcategoría", () => {
+    const ticket: Movimiento = {
+      ...gasto("ticket", "2026-11-05", 100_000_00, "viveres"),
+      partes: [
+        { categoriaId: "viveres", categoria: "Canasta", monto: 60_000_00 },
+        { categoriaId: "limpieza", categoria: "Canasta", monto: 30_000_00 },
+        { categoriaId: "aseo", categoria: "Canasta", monto: 10_000_00 },
+      ],
+    };
+    const [nov] = calcularPrevision({ ...vacio(), movimientos: [ticket] }, { desde: "2026-11", meses: 1 });
+    expect(nov.detalle["egreso:Canasta"].map((i) => [i.categoriaId, i.monto])).toEqual([
+      ["viveres", 60_000_00],
+      ["limpieza", 30_000_00],
+      ["aseo", 10_000_00],
+    ]);
+  });
+
   it("descuenta lo gastado y prevé lo que resta", () => {
     const datos: Datos = {
       ...vacio(),
