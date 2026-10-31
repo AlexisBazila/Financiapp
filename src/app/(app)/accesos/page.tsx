@@ -1,7 +1,14 @@
 import { headers } from "next/headers";
 import { requerirUsuario } from "@/lib/supabase/servidor";
 import { caja, textoSuave } from "../../estilos";
-import { BotonAccesoHogar, BotonQuitar, CodigoInvitacion, FormularioInvitacion } from "./formularios";
+import {
+  BotonAccesoHogar,
+  BotonBlanquear,
+  BotonQuitar,
+  CodigoInvitacion,
+  FormularioContrasena,
+  FormularioInvitacion,
+} from "./formularios";
 
 interface Invitacion {
   codigo: string;
@@ -62,7 +69,7 @@ function Invitaciones({ lista, origen }: { lista: Invitacion[]; origen: string }
 }
 
 export default async function Accesos() {
-  const { supabase } = await requerirUsuario();
+  const { supabase, usuarioId } = await requerirUsuario();
   const encabezados = await headers();
   const origen = `${encabezados.get("x-forwarded-proto") ?? "https"}://${encabezados.get("host")}`;
 
@@ -105,7 +112,12 @@ export default async function Accesos() {
                   {m.yo && " · vos"}
                 </span>
               </span>
-              {esAdmin && !m.yo && <BotonQuitar usuario={m.usuario_id} email={m.email} />}
+              {esAdmin && !m.yo && (
+                <span className="flex items-center gap-4">
+                  <BotonBlanquear usuario={m.usuario_id} email={m.email} />
+                  <BotonQuitar usuario={m.usuario_id} email={m.email} />
+                </span>
+              )}
             </li>
           ))}
         </ul>
@@ -121,6 +133,13 @@ export default async function Accesos() {
             <Invitaciones lista={lista.filter((i) => i.hogar_id)} origen={origen} />
           </div>
         )}
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <h2 className="text-lg font-semibold">Tu contraseña</h2>
+        <div className={`${caja} p-5`}>
+          <FormularioContrasena />
+        </div>
       </section>
 
       {esAdminApp && (
@@ -153,7 +172,12 @@ export default async function Accesos() {
                   .filter((u) => u.hogar_id)
                   .map((u) => (
                     <tr key={`${u.usuario_id}-${u.hogar_id}`} className={u.hogar_activo ? "" : "opacity-60"}>
-                      <td className="px-4 py-2">{u.email}</td>
+                      <td className="px-4 py-2">
+                        <div className="flex flex-col items-start gap-1">
+                          {u.email}
+                          {u.usuario_id !== usuarioId && <BotonBlanquear usuario={u.usuario_id} email={u.email} />}
+                        </div>
+                      </td>
                       <td className="px-4 py-2">
                         {u.hogar_id === hogar ? "El tuyo" : u.hogar}
                         {!u.hogar_activo && <span className="ml-1 text-xs text-red-600">suspendido</span>}
@@ -176,8 +200,9 @@ export default async function Accesos() {
             )}
           </div>
           <p className={`text-xs ${textoSuave}`}>
-            Suspender un hogar le corta el acceso a todos sus miembros sin borrar nada. Para borrar una cuenta del todo,
-            usá Authentication → Users en Supabase.
+            Suspender un hogar le corta el acceso a todos sus miembros sin borrar nada. Blanquear una contraseña cierra
+            la sesión de esa persona y te da una provisoria para pasarle; al entrar con ella elige una nueva. Para
+            borrar una cuenta del todo, usá Authentication → Users en Supabase.
           </p>
         </section>
       )}
