@@ -1,7 +1,8 @@
 import { informeAMarkdown, SECCIONES, type Celda, type Informe } from "@/lib/finanzas/informe";
 import { boton, caja, campo, etiqueta, textoSuave } from "../../estilos";
 import { BotonesInforme } from "./botones";
-import { informeDelHogar, leerParametros, PLAZOS } from "./datos";
+import { graficosDelHogar, informeDelHogar, leerParametros, PLAZOS } from "./datos";
+import { GraficosInforme } from "./graficos";
 
 const formato = new Intl.NumberFormat("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -69,7 +70,7 @@ function VistaInforme({ informe }: { informe: Informe }) {
 export default async function Informes({ searchParams }: PageProps<"/informes">) {
   const parametros = await searchParams;
   const { incluir, atras, adelante, ver } = leerParametros(parametros);
-  const informe = ver ? await informeDelHogar(parametros) : null;
+  const [informe, graficos] = await Promise.all([ver ? informeDelHogar(parametros) : null, graficosDelHogar()]);
   const consulta = new URLSearchParams([
     ["ver", "1"],
     ["atras", String(atras)],
@@ -82,12 +83,15 @@ export default async function Informes({ searchParams }: PageProps<"/informes">)
       <div className="print:hidden">
         <h1 className="text-2xl font-semibold">Informes</h1>
         <p className={`mt-1 text-sm ${textoSuave}`}>
-          Un resumen de tus finanzas para descargar en PDF o CSV, o copiar como texto. Está armado para pasárselo a una
-          IA y pedirle ayuda con decisiones: cuánto podés invertir en una remodelación, qué cuota de auto podés pagar,
-          dónde recortar.
+          Gráficos para ver en qué se va la plata, y un resumen de tus finanzas para descargar en PDF o CSV, o copiar
+          como texto. El resumen está armado para pasárselo a una IA y pedirle ayuda con decisiones: cuánto podés
+          invertir en una remodelación, qué cuota de auto podés pagar, dónde recortar.
         </p>
       </div>
 
+      <GraficosInforme {...graficos} />
+
+      <h2 className="-mb-4 text-lg font-semibold print:hidden">Informe para descargar</h2>
       <form action="/informes" className={`${caja} flex flex-col gap-4 p-5 print:hidden`}>
         <input type="hidden" name="ver" value="1" />
         <fieldset className="flex flex-col gap-2">
