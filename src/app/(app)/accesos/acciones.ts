@@ -50,3 +50,39 @@ export async function cambiarAccesoHogar(hogar: string, activo: boolean) {
   await supabase.rpc("cambiar_acceso_hogar", { hogar, activo });
   revalidatePath("/accesos");
 }
+
+export interface ResultadoBlanqueo {
+  error?: string;
+  provisoria?: string;
+}
+
+/** Contraseña provisoria para otra cuenta; se muestra una sola vez. */
+export async function blanquearContrasena(usuario: string): Promise<ResultadoBlanqueo> {
+  const { supabase } = await requerirUsuario();
+  const { data, error } = await supabase.rpc("blanquear_contrasena", { usuario });
+  if (error || !data) return { error: "No tenés permiso para blanquear esta contraseña." };
+  return { provisoria: data };
+}
+
+/** La propia contraseña: la que elige quien entra con una provisoria, o un cambio cualquiera. */
+export async function cambiarContrasena(_: Resultado, form: FormData): Promise<Resultado> {
+  const { supabase } = await requerirUsuario();
+  const clave = String(form.get("clave") ?? "");
+  if (clave.length < 8) return { error: "Tiene que tener al menos 8 caracteres." };
+  if (clave !== form.get("repetir")) return { error: "Las dos contraseñas no coinciden." };
+  const { error } = await supabase.auth.updateUser({ password: clave, data: { cambiar_clave: null } });
+  if (error) {
+    return {
+      error:
+        error.code === "same_password"
+          ? "Tiene que ser distinta de la anterior."
+          : error.code === "weak_password"
+            ? "Es muy fácil de adivinar: probá con una más larga."
+            : "No se pudo cambiar la contraseña. Probá de nuevo.",
+    };
+  }
+  // Un token nuevo, sin el aviso de cambiar la contraseña.
+  await supabase.auth.refreshSession();
+  revalidatePath("/", "layout");
+  return { ok: true };
+}

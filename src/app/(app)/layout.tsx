@@ -5,6 +5,7 @@ import { actualizarCotizaciones, monedasAActualizar } from "@/lib/datos/bcra";
 import { requerirUsuario } from "@/lib/supabase/servidor";
 import { caja, textoSuave } from "../estilos";
 import { salir } from "../login/acciones";
+import { FormularioContrasena } from "./accesos/formularios";
 import { MenuLateral, MenuSuperior } from "./navegacion";
 
 const logo = (
@@ -33,9 +34,33 @@ async function ActualizarCotizaciones() {
   return null;
 }
 
+/**
+ * Si entró con una contraseña provisoria (la blanqueó un admin). El token lo dice sin ir al servidor; si
+ * lo dice, se confirma con el usuario actual, porque el token puede ser de antes de cambiarla.
+ */
+async function debeCambiarClave(supabase: Awaited<ReturnType<typeof requerirUsuario>>["supabase"]) {
+  const { data } = await supabase.auth.getClaims();
+  if (!data?.claims.user_metadata?.cambiar_clave) return false;
+  const { data: actual } = await supabase.auth.getUser();
+  return Boolean(actual.user?.user_metadata?.cambiar_clave);
+}
+
 /** Si el hogar está suspendido (o la cuenta no tiene hogar), no se muestra nada de la app. */
 async function ConAcceso({ children }: { children: ReactNode }) {
   const { supabase } = await requerirUsuario();
+  if (await debeCambiarClave(supabase)) {
+    return (
+      <div className={`${caja} mx-auto flex max-w-lg flex-col gap-4 p-6`}>
+        <div>
+          <h1 className="text-lg font-semibold">Elegí una contraseña nueva</h1>
+          <p className={`mt-2 text-sm ${textoSuave}`}>
+            Entraste con una contraseña provisoria. Antes de seguir, elegí una propia de al menos 8 caracteres.
+          </p>
+        </div>
+        <FormularioContrasena obligatorio />
+      </div>
+    );
+  }
   const { data: hogar } = await supabase.rpc("mi_hogar");
   if (hogar) return children;
   return (
