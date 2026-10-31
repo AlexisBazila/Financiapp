@@ -1,5 +1,7 @@
 import { cargarHogar } from "@/lib/datos/cargar";
-import { hoy } from "@/lib/finanzas/fechas";
+import { hoy, mesDe, mesesEntre, rangoMeses, sumarMeses } from "@/lib/finanzas/fechas";
+import { porcionesDeLaPrevision } from "@/lib/finanzas/graficos";
+import { calcularPrevision } from "@/lib/finanzas/prevision";
 import { armarInforme, esSeccion, SECCIONES, type Seccion } from "@/lib/finanzas/informe";
 import { requerirUsuario } from "@/lib/supabase/servidor";
 
@@ -36,4 +38,19 @@ export async function informeDelHogar(p: Parametros) {
     incluir,
     categorias: Object.fromEntries(categorias.map((c) => [c.id, c.nombre])),
   });
+}
+
+/** Meses que se pueden graficar hacia adelante, además del actual. */
+const MESES_PREVISTOS = 12;
+
+/** Lo de cada mes por categoría y subcategoría, desde el inicio del hogar hasta un año adelante. */
+export async function graficosDelHogar() {
+  const { supabase } = await requerirUsuario();
+  const { hogar, datos, categorias } = await cargarHogar(supabase);
+  const actual = mesDe(hoy());
+  const hasta = sumarMeses(actual, MESES_PREVISTOS);
+  const desde = hogar.mesInicio < actual ? hogar.mesInicio : actual;
+  const meses = rangoMeses(desde, mesesEntre(desde, hasta) + 1);
+  const prevision = calcularPrevision(datos, { desde, meses: meses.length, mesActual: actual, hoy: hoy() });
+  return { actual, meses, porciones: porcionesDeLaPrevision(prevision, categorias) };
 }
