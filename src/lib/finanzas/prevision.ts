@@ -331,7 +331,10 @@ function repartir(mov: Movimiento, efectos: Efecto[], cambio: number): Efecto[] 
         ...flujo,
         categoria: parte.categoria ?? "Sin categoría",
         monto,
-        ...(flujo.item ? { item: { ...flujo.item, categoriaId: parte.categoriaId } } : {}),
+        // Cada parte es su propio ítem: con la misma clave se juntarían en una sola subcategoría.
+        ...(flujo.item
+          ? { item: { ...flujo.item, clave: `${flujo.item.clave}#${i}`, categoriaId: parte.categoriaId } }
+          : {}),
         ...(flujo.movimiento ? { movimiento: { ...flujo.movimiento, monto: signo * monto } } : {}),
       };
       return i === 0 ? { ...e, flujo: parcial } : { mes: e.mes, cuentaId: e.cuentaId, delta: 0, flujo: parcial };
