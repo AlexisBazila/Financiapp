@@ -149,6 +149,7 @@ export function ListaMovimientos({
   opciones,
   cuentaId,
   vacio,
+  filtro,
 }: {
   lista: Movimiento[];
   nombres: Map<string, string>;
@@ -158,6 +159,8 @@ export function ListaMovimientos({
   /** Si es la lista de una cuenta: las transferencias suman o restan según el sentido. */
   cuentaId?: string;
   vacio: string;
+  /** Con un filtro de categoría: lo de cada movimiento repartido que es de ella, por id. */
+  filtro?: { nombre: string; montos: Map<string, number> };
 }) {
   if (lista.length === 0) return <p className={textoSuave}>{vacio}</p>;
 
@@ -167,7 +170,7 @@ export function ListaMovimientos({
   return (
     <ul className={`${caja} overflow-hidden`}>
       {[...dias].map(([fecha, delDia]) => {
-        const neto = delDia.reduce((total, m) => total + signo(m, cuentaId) * m.monto, 0);
+        const neto = delDia.reduce((total, m) => total + signo(m, cuentaId) * (filtro?.montos.get(m.id) ?? m.monto), 0);
         return (
           <Fragment key={fecha}>
             <li className="flex items-center justify-between gap-3 border-b border-black/5 bg-black/[0.04] px-4 py-1.5 text-sm font-medium dark:border-white/10 dark:bg-white/[0.06]">
@@ -189,6 +192,9 @@ export function ListaMovimientos({
                 guardado={guardados.has(m.id)}
                 opciones={opciones}
                 cuentaId={cuentaId}
+                enFiltro={
+                  filtro?.montos.has(m.id) ? { nombre: filtro.nombre, monto: filtro.montos.get(m.id)! } : undefined
+                }
               />
             ))}
           </Fragment>
@@ -205,6 +211,7 @@ function Fila({
   guardado,
   opciones,
   cuentaId,
+  enFiltro,
 }: {
   m: Movimiento;
   nombres: Map<string, string>;
@@ -212,6 +219,8 @@ function Fila({
   guardado: boolean;
   opciones: Opciones;
   cuentaId?: string;
+  /** Si es un movimiento repartido y se filtra por categoría: cuánto es de ella. */
+  enFiltro?: { nombre: string; monto: number };
 }) {
   const estado = situacion(m);
   const s = signo(m, cuentaId);
@@ -256,6 +265,11 @@ function Fila({
               ? `${nombres.get(m.cuentaId)} → ${nombres.get(m.cuentaDestinoId ?? "")}`
               : `${nombres.get(m.cuentaId)}${m.contraparte ? ` ${s > 0 ? "←" : "→"} ${m.contraparte}` : ""}${ruta ? ` · ${ruta}` : ""}`}
           </span>
+          {enFiltro && (
+            <span className="mt-1 inline-block rounded bg-sky-100 px-1.5 py-0.5 text-xs text-sky-900 dark:bg-sky-500/20 dark:text-sky-200">
+              En {enFiltro.nombre}: $ {pesosExactos(enFiltro.monto)} de $ {pesosExactos(m.monto)}
+            </span>
+          )}
         </span>
         {cuota && (
           <Chip clase={CHIP_CUOTA}>

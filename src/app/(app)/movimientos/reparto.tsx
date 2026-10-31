@@ -19,8 +19,9 @@ const nueva = (categoriaId?: string, monto = ""): Fila => ({ clave: siguiente++,
 
 /**
  * La categoría de un gasto o ingreso: una sola, o repartida en varias con un monto cada una (un ticket
- * con comida y limpieza). Envía `categoria_id` (una vez por parte) y, si se reparte, `repartir` y
- * `reparto_monto` por parte.
+ * con comida y limpieza). Envía `categoria_id` (una vez por parte) y, si se reparte, `repartir`,
+ * `reparto_monto` por parte y `categoria_principal`: la que identifica al movimiento en la lista sin
+ * sumar en ella.
  */
 export function CategoriaOReparto({
   categorias,
@@ -36,6 +37,8 @@ export function CategoriaOReparto({
   inicial?: string;
   partesIniciales?: ParteMovimiento[];
 }) {
+  // Si la principal es la de la primera parte, no se eligió aparte.
+  const principalInicial = partesIniciales?.length && inicial !== partesIniciales[0].categoriaId ? inicial : undefined;
   const [filas, setFilas] = useState<Fila[] | null>(() =>
     partesIniciales && partesIniciales.length > 1
       ? partesIniciales.map((p) => nueva(p.categoriaId, pesosExactos(p.original ?? p.monto)))
@@ -76,6 +79,20 @@ export function CategoriaOReparto({
             : falta > 0
               ? `Falta asignar $ ${pesosExactos(falta)}`
               : `Te pasaste $ ${pesosExactos(-falta)}`}
+        </p>
+      </div>
+      <div className="flex flex-col gap-1">
+        <SelectorCategoria
+          categorias={categorias}
+          tipo={tipo}
+          valorInicial={principalInicial}
+          texto="Para identificarlo en la lista (no suma)"
+          nombre="categoria_principal"
+          sinElegir="La de la primera parte"
+        />
+        <p className="text-xs opacity-70">
+          Solo el ícono y el nombre con que aparece, por ejemplo 🛒 Supermercado. Lo que cuenta en categorías y
+          presupuestos son las partes de abajo.
         </p>
       </div>
       {filas.map((f, i) => (

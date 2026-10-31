@@ -32,11 +32,31 @@ export function leerFiltros(params: Record<string, string | string[] | undefined
 export const hayFiltros = (f: Filtros) => CLAVES.some((c) => f[c]);
 
 /** Sin mayúsculas ni tildes, para buscar texto. */
-const normal = (texto: string) =>
-  texto
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase();
+const normal = (texto: string) => texto.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+
+/** Las categorías del filtro: la elegida con sus subcategorías, o las de un presupuesto. */
+export function categoriasElegidas(
+  f: Filtros,
+  categorias: Categoria[],
+  presupuestos: Presupuesto[],
+): Set<string> | undefined {
+  if (f.cat?.startsWith("grupo:")) {
+    return new Set(presupuestos.find((p) => p.id === f.cat!.slice(6))?.categoriaIds ?? []);
+  }
+  if (f.cat) return new Set([f.cat, ...categorias.filter((c) => c.padreId === f.cat).map((c) => c.id)]);
+  return undefined;
+}
+
+/**
+ * Lo de un movimiento que es de esas categorías. En uno repartido, la suma de sus partes en ellas (la
+ * categoría con que se identifica no cuenta); si no, todo o nada.
+ */
+export function montoEnCategorias(m: Movimiento, elegidas: Set<string>): number {
+  if (m.partes && m.partes.length > 0) {
+    return m.partes.reduce((s, p) => s + (p.categoriaId && elegidas.has(p.categoriaId) ? p.monto : 0), 0);
+  }
+  return m.categoriaId !== undefined && elegidas.has(m.categoriaId) ? m.monto : 0;
+}
 
 export function filtrar(
   lista: Movimiento[],
@@ -44,17 +64,12 @@ export function filtrar(
   categorias: Categoria[],
   presupuestos: Presupuesto[],
 ): Movimiento[] {
-  let elegidas: Set<string> | undefined;
-  if (f.cat?.startsWith("grupo:")) {
-    elegidas = new Set(presupuestos.find((p) => p.id === f.cat!.slice(6))?.categoriaIds ?? []);
-  } else if (f.cat) {
-    elegidas = new Set([f.cat, ...categorias.filter((c) => c.padreId === f.cat).map((c) => c.id)]);
-  }
+  const elegidas = categoriasElegidas(f, categorias, presupuestos);
   const contraparte = f.a && normal(f.a);
   const texto = f.q && normal(f.q);
   return lista.filter(
     (m) =>
-      (!elegidas || (m.categoriaId !== undefined && elegidas.has(m.categoriaId))) &&
+      (!elegidas || montoEnCategorias(m, elegidas) !== 0) &&
       (!f.tipo || m.tipo === f.tipo) &&
       (!contraparte || normal(m.contraparte ?? "").includes(contraparte)) &&
       (!texto || normal(m.descripcion).includes(texto)) &&
@@ -125,7 +140,13 @@ export function FormularioFiltros({
         </label>
         <label className={etiqueta}>
           Pagado a / cobrado de
-          <input name="a" list="filtro-contrapartes" defaultValue={filtros.a} placeholder="Bercomat" className={campo} />
+          <input
+            name="a"
+            list="filtro-contrapartes"
+            defaultValue={filtros.a}
+            placeholder="Bercomat"
+            className={campo}
+          />
           <datalist id="filtro-contrapartes">
             {contrapartes.map((c) => (
               <option key={c} value={c} />

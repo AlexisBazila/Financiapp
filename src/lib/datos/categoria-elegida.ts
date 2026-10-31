@@ -2,9 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { TipoCategoria } from "./categorias";
 import { texto } from "./formularios";
 
-export type CategoriaElegida =
-  | { error: string }
-  | { categoria_id: string | null; categoria: string | null };
+export type CategoriaElegida = { error: string } | { categoria_id: string | null; categoria: string | null };
 
 /**
  * Lee el campo `categoria_id` de un formulario y comprueba que la categoría sea del hogar y del tipo
@@ -14,8 +12,9 @@ export async function categoriaElegida(
   supabase: SupabaseClient,
   form: FormData,
   tipo: TipoCategoria,
+  campo = "categoria_id",
 ): Promise<CategoriaElegida> {
-  const id = texto(form, "categoria_id");
+  const id = texto(form, campo);
   if (!id) return { categoria_id: null, categoria: null };
   const { data } = await supabase.from("categorias").select("nombre, tipo").eq("id", id).maybeSingle();
   if (!data) return { error: "No se encontró la categoría." };

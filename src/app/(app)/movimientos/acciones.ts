@@ -83,10 +83,14 @@ export async function guardarMovimiento(base: Base | null, _: Resultado, form: F
     if (tipoDe(destinoId) !== "tarjeta") return { error: "Elegí la tarjeta que pagás." };
     if (tipoDe(cuentaId) === "tarjeta") return { error: "Elegí la cuenta desde la que pagás." };
   }
+  // En un reparto, la categoría del movimiento es solo para identificarlo (su ícono en la lista): la
+  // elegida aparte o, si no, la de la primera parte. Lo que cuenta son las partes.
+  const principal =
+    form.get("repartir") === "on" && texto(form, "categoria_principal") ? "categoria_principal" : undefined;
   const categoria =
     tipo === "transferencia"
       ? { categoria_id: null, categoria: null }
-      : await categoriaElegida(supabase, form, tipo === "ingreso" ? "ingreso" : "egreso");
+      : await categoriaElegida(supabase, form, tipo === "ingreso" ? "ingreso" : "egreso", principal);
   if ("error" in categoria) return categoria;
   const reparto = tipo === "transferencia" ? null : await leerReparto(supabase, form, monto, tipo);
   if (reparto && "error" in reparto) return reparto;

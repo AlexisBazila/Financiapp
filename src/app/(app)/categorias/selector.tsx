@@ -39,18 +39,23 @@ interface Opcion {
 
 /**
  * Categoría de un tipo, con sus subcategorías: se elige tecleando para filtrar la lista, y se puede
- * crear una nueva sin salir del formulario. Envía `categoria_id`.
+ * crear una nueva sin salir del formulario. Envía `categoria_id` (o el `nombre` que se le pase).
  */
 export function SelectorCategoria({
   categorias,
   tipo,
   valorInicial = "",
   texto = "Categoría",
+  nombre = "categoria_id",
+  sinElegir = "Sin categoría",
 }: {
   categorias: Categoria[];
   tipo: TipoCategoria;
   valorInicial?: string;
   texto?: string;
+  nombre?: string;
+  /** Qué significa no elegir ninguna. */
+  sinElegir?: string;
 }) {
   const [nuevas, setNuevas] = useState<Categoria[]>([]);
   const [valor, setValor] = useState(valorInicial);
@@ -63,7 +68,7 @@ export function SelectorCategoria({
   const ramas = arbol(todas, tipo);
   const elegida = todas.find((c) => c.id === valor);
 
-  const opciones: Opcion[] = [{ id: "", texto: "Sin categoría", elegida: "", busqueda: "sin categoria" }];
+  const opciones: Opcion[] = [{ id: "", texto: sinElegir, elegida: "", busqueda: "sin categoria" }];
   for (const { categoria, hijas } of ramas) {
     opciones.push({
       id: categoria.id,
@@ -111,7 +116,7 @@ export function SelectorCategoria({
     <>
       <div className={claseEtiqueta}>
         <label htmlFor={`${lista}-campo`}>{texto}</label>
-        <input type="hidden" name="categoria_id" value={valor} />
+        <input type="hidden" name={nombre} value={valor} />
         <div className="relative flex items-center">
           {elegida && !abierta && <Punto color={elegida.color} className="pointer-events-none absolute left-3" />}
           <input
@@ -121,7 +126,7 @@ export function SelectorCategoria({
             aria-controls={lista}
             aria-autocomplete="list"
             autoComplete="off"
-            placeholder={abierta ? "Buscar…" : "Sin categoría"}
+            placeholder={abierta ? "Buscar…" : sinElegir}
             value={abierta ? consulta : textoElegida}
             onFocus={() => {
               setConsulta("");
