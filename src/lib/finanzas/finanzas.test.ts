@@ -662,6 +662,9 @@ describe("estado de la tarjeta", () => {
     expect(estado.consumoPeriodo).toBe(150_000_00 + 100_000_00);
     expect(estado.deudaTotal).toBe(2_000_000_00 + 250_000_00);
     expect(estado.cuotasFuturas).toBe(200_000_00);
+    expect(estado.periodoAnterior).toMatchObject({ mes: "2026-10", cierre: "2026-10-22", vencimiento: "2026-11-02" });
+    expect(estado.resumenAnterior).toBe(2_000_000_00);
+    expect(estado.deudaAnterior).toBe(2_000_000_00);
     expect(estado.disponible).toBe(4_000_000_00 - 2_250_000_00 - 200_000_00);
   });
 
@@ -679,6 +682,9 @@ describe("estado de la tarjeta", () => {
   it("después del vencimiento descuenta el pago automático", () => {
     const estado = estadoTarjeta(datos(), "visa", "2026-11-05", "2026-10");
     expect(estado.deudaTotal).toBe(250_000_00);
+    // El resumen anterior ya está pago: no queda deuda del período anterior.
+    expect(estado.resumenAnterior).toBe(2_000_000_00);
+    expect(estado.deudaAnterior).toBe(0);
   });
 });
 
