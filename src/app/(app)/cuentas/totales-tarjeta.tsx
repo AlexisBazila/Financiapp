@@ -19,11 +19,11 @@ function Conciliado({ centavos }: { centavos: number }) {
 }
 
 /**
- * Deuda total, deuda del período y lo que queda del límite. El disponible va de verde a rojo a medida que
+ * Deuda total, deuda del período anterior (lo que falta pagar del último resumen cerrado), deuda del período y lo que queda del límite. El disponible va de verde a rojo a medida que
  * se acerca al límite.
  */
 export function TotalesTarjeta({ estado, compacto = false }: { estado: EstadoTarjeta; compacto?: boolean }) {
-  const { periodo, limite, disponible } = estado;
+  const { periodo, periodoAnterior, limite, disponible } = estado;
   const usado = limite && disponible !== undefined ? Math.min(1, Math.max(0, 1 - disponible / limite)) : 0;
   // 120 es verde y 0 es rojo.
   const color = `hsl(${Math.round(120 * (1 - usado))} 70% 45%)`;
@@ -31,12 +31,22 @@ export function TotalesTarjeta({ estado, compacto = false }: { estado: EstadoTar
   const numero = compacto ? "font-semibold tabular-nums" : "text-xl font-semibold tabular-nums";
 
   return (
-    <div className={`grid gap-4 ${compacto ? "grid-cols-2 sm:grid-cols-3" : "sm:grid-cols-3"}`}>
+    <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
       <div>
         <div className={`text-sm ${textoSuave}`}>Deuda total</div>
         <div className={`${numero} ${estado.deudaTotal > 0 ? rojo : ""}`}>{deuda(estado.deudaTotal)}</div>
         <div className={`text-xs ${textoSuave}`}>resúmenes sin pagar + período en curso</div>
         <Conciliado centavos={estado.deudaTotalConciliada} />
+      </div>
+      <div>
+        <div className={`text-sm ${textoSuave}`}>Deuda del período anterior</div>
+        <div className={`${numero} ${estado.deudaAnterior > 0 ? rojo : ""}`}>{deuda(estado.deudaAnterior)}</div>
+        <div className={`text-xs ${textoSuave}`}>
+          del {diaMes(periodoAnterior.desde)} al {diaMes(periodoAnterior.cierre)} · vence el{" "}
+          {diaMes(periodoAnterior.vencimiento)}
+          {estado.resumenAnterior !== estado.deudaAnterior && ` · resumen ${deuda(estado.resumenAnterior)}`}
+        </div>
+        <Conciliado centavos={estado.deudaAnteriorConciliada} />
       </div>
       <div>
         <div className={`text-sm ${textoSuave}`}>Deuda del período</div>
@@ -46,7 +56,7 @@ export function TotalesTarjeta({ estado, compacto = false }: { estado: EstadoTar
         </div>
         <Conciliado centavos={estado.consumoPeriodoConciliado} />
       </div>
-      <div className={compacto ? "col-span-2 sm:col-span-1" : ""}>
+      <div>
         {limite !== undefined && disponible !== undefined ? (
           <>
             <div className={`text-sm ${textoSuave}`}>Disponible del límite</div>

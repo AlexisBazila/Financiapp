@@ -16,6 +16,14 @@ export interface PeriodoTarjeta {
 
 export interface EstadoTarjeta {
   periodo: PeriodoTarjeta;
+  /** El período ya cerrado anterior al que está en curso. */
+  periodoAnterior: PeriodoTarjeta;
+  /** Total del resumen anterior (el último cerrado): compras menos devoluciones, sin descontar pagos. */
+  resumenAnterior: Centavos;
+  /** Lo que falta pagar de los resúmenes cerrados: deuda total menos el consumo del período en curso. */
+  deudaAnterior: Centavos;
+  /** Lo mismo, contando solo lo conciliado. */
+  deudaAnteriorConciliada: Centavos;
   /** Compras menos devoluciones del período, incluidas las cuotas que caen en él y lo planificado. */
   consumoPeriodo: Centavos;
   /** Lo mismo, contando solo lo conciliado. */
@@ -66,6 +74,8 @@ export function estadoTarjeta(datos: Datos, tarjetaId: string, fecha: Fecha, des
   if (!tarjeta?.tarjeta) throw new Error(`La cuenta ${tarjetaId} no es una tarjeta`);
   const actual = resumenDeFecha(tarjeta, fecha);
   const periodo = periodoDe(tarjeta, actual);
+  const anterior = sumarMeses(actual, -1);
+  const periodoAnterior = periodoDe(tarjeta, anterior);
 
   const todos = expandir(datos, sumarMeses(desde, -1), sumarMeses(actual, 1));
   const compras = todos.filter((m) => m.cuentaId === tarjetaId && m.tipo !== "transferencia");
@@ -103,13 +113,22 @@ export function estadoTarjeta(datos: Datos, tarjetaId: string, fecha: Fecha, des
     .reduce((total, p) => total + p.monto, 0);
 
   const deudaTotal = tarjeta.saldoInicial + deResumenes((r) => r <= actual) - cargados - automaticos;
+  const consumoPeriodoConciliado = deResumenes((r) => r === actual, true);
+  const deudaTotalConciliada = tarjeta.saldoInicial + deResumenes((r) => r <= actual, true) - pagosCargados(true);
+  // Si el resumen anterior cerró antes de `desde`, es el saldo inicial de la tarjeta.
+  const resumenAnterior =
+    mesDe(periodoAnterior.cierre) < desde ? tarjeta.saldoInicial : deResumenes((r) => r === anterior);
   const limite = tarjeta.tarjeta.limite;
   return {
     periodo,
+    periodoAnterior,
+    resumenAnterior,
+    deudaAnterior: deudaTotal - consumoPeriodo,
+    deudaAnteriorConciliada: deudaTotalConciliada - consumoPeriodoConciliado,
     consumoPeriodo,
-    consumoPeriodoConciliado: deResumenes((r) => r === actual, true),
+    consumoPeriodoConciliado,
     deudaTotal,
-    deudaTotalConciliada: tarjeta.saldoInicial + deResumenes((r) => r <= actual, true) - pagosCargados(true),
+    deudaTotalConciliada,
     cuotasFuturas,
     limite,
     disponible: limite === undefined ? undefined : limite - Math.max(0, deudaTotal) - cuotasFuturas,
