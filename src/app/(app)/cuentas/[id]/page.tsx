@@ -4,12 +4,13 @@ import { cargarHogar } from "@/lib/datos/cargar";
 import { simbolo } from "@/lib/datos/monedas";
 import { estadoTarjeta, periodoDe, resumenDe } from "@/lib/finanzas/estado-tarjeta";
 import { hoy, mesDe, mesesEntre, sumarMeses } from "@/lib/finanzas/fechas";
-import { calcularPrevision, expandir } from "@/lib/finanzas/prevision";
+import { calcularPrevision, esAhorro, expandir } from "@/lib/finanzas/prevision";
 import { resumenDeFecha } from "@/lib/finanzas/tarjeta";
 import type { Cuenta as TipoCuenta, Movimiento } from "@/lib/finanzas/tipos";
 import { requerirUsuario } from "@/lib/supabase/servidor";
 import { caja, textoSuave } from "../../../estilos";
 import { pesosExactos } from "../../../formato";
+import { enConsulta, filtrar, FormularioFiltros, hayFiltros, leerFiltros } from "../../movimientos/filtros";
 import { NuevoMovimiento } from "../../movimientos/formularios";
 import { Leyenda, ListaMovimientos, MES, SelectorMes, tituloMes } from "../../movimientos/lista";
 import { movimientosDelMes } from "../../movimientos/opciones";
@@ -55,17 +56,19 @@ function Saldos({
 }
 
 export default async function Cuenta({ params, searchParams }: PageProps<"/cuentas/[id]">) {
-  const [{ id }, { mes: pedido }] = await Promise.all([params, searchParams]);
+  const [{ id }, consulta] = await Promise.all([params, searchParams]);
+  const pedido = consulta.mes;
   const actual = mesDe(hoy());
   const mes = typeof pedido === "string" && MES.test(pedido) ? pedido : actual;
 
   const { supabase } = await requerirUsuario();
   const datosHogar = await cargarHogar(supabase);
-  const { hogar, datos, categorias } = datosHogar;
+  const { hogar, datos, categorias, contrapartes } = datosHogar;
+  const filtros = leerFiltros(consulta);
   const cuenta = datos.cuentas.find((c) => c.id === id);
   if (!cuenta) notFound();
 
-  if (cuenta.tarjeta) return <Tarjeta datosHogar={datosHogar} cuenta={cuenta} pedido={pedido} />;
+  if (cuenta.tarjeta) return <Tarjeta datosHogar={datosHogar} cuenta={cuenta} pedido={pedido} consulta={consulta} />;
 
   const { opciones, pagosAutomaticos, ahorrosPrevistos } = movimientosDelMes(datosHogar, mes, actual);
   const lista = [...expandir(datos, mes, mes), ...pagosAutomaticos, ...ahorrosPrevistos]
@@ -106,11 +109,24 @@ export default async function Cuenta({ params, searchParams }: PageProps<"/cuent
           {cuenta.titular && <p className={`text-sm ${textoSuave}`}>👤 {cuenta.titular}</p>}
         </div>
         {opciones.cuentas.length > 0 && (
-          <NuevoMovimiento {...opciones} cuentaSugerida={id} fechaSugerida={mes === actual ? hoy() : `${mes}-01`} />
+          <div className="flex flex-wrap items-center gap-2">
+            {esAhorro(cuenta) &&
+              (["ingreso_ahorro", "retiro_ahorro"] as const).map((tipo) => (
+                <NuevoMovimiento
+                  key={tipo}
+                  {...opciones}
+                  cuentaSugerida={id}
+                  tipoInicial={tipo}
+                  texto={tipo === "ingreso_ahorro" ? "🐷 Ingreso a ahorro" : "↩ Retiro de ahorro"}
+                  fechaSugerida={mes === actual ? hoy() : `${mes}-01`}
+                />
+              ))}
+            <NuevoMovimiento {...opciones} cuentaSugerida={id} fechaSugerida={mes === actual ? hoy() : `${mes}-01`} />
+          </div>
         )}
       </div>
 
-      <SelectorMes mes={mes} actual={actual} ruta={`/cuentas/${id}`} />
+      <SelectorMes mes={mes} actual={actual} ruta={`/cuentas/${id}`} consulta={enConsulta(filtros)} />
 
       {saldos ? (
         <div className={`${caja} grid gap-4 p-4 sm:grid-cols-2`}>
@@ -135,16 +151,28 @@ export default async function Cuenta({ params, searchParams }: PageProps<"/cuent
         </p>
       )}
 
+      <FormularioFiltros
+        filtros={filtros}
+        mes={mes}
+        categorias={categorias}
+        presupuestos={datosHogar.presupuestos}
+        contrapartes={contrapartes}
+      />
+
       <Leyenda />
 
       <ListaMovimientos
-        lista={lista}
+        lista={filtrar(lista, filtros, categorias, datos.presupuestos ?? [])}
         nombres={new Map(datos.cuentas.map((c) => [c.id, c.nombre]))}
         categorias={new Map(categorias.map((c) => [c.id, c]))}
         guardados={new Set(datos.movimientos.map((m) => m.id))}
         opciones={opciones}
         cuentaId={id}
-        vacio={`No hay movimientos de ${cuenta.nombre} en ${tituloMes(mes).toLowerCase()}.`}
+        vacio={
+          hayFiltros(filtros)
+            ? `Ningún movimiento de ${tituloMes(mes).toLowerCase()} coincide con los filtros.`
+            : `No hay movimientos de ${cuenta.nombre} en ${tituloMes(mes).toLowerCase()}.`
+        }
       />
     </div>
   );
@@ -158,12 +186,16 @@ async function Tarjeta({
   datosHogar,
   cuenta,
   pedido,
+  consulta,
 }: {
   datosHogar: Awaited<ReturnType<typeof cargarHogar>>;
   cuenta: TipoCuenta;
   pedido: string | string[] | undefined;
+  consulta: Record<string, string | string[] | undefined>;
 }) {
-  const { hogar, datos, categorias } = datosHogar;
+  const { hogar, datos, categorias, contrapartes } = datosHogar;
+  const filtros = leerFiltros(consulta);
+  const todos = filtros.todos === "si";
   const id = cuenta.id;
   const fecha = hoy();
   const actual = resumenDeFecha(cuenta, fecha);
@@ -189,6 +221,16 @@ async function Tarjeta({
   const consumo = lista.reduce((total, m) => total + importe(m), 0);
   const consumoConciliado = lista.filter((m) => m.conciliado).reduce((total, m) => total + importe(m), 0);
 
+  // Con filtros: en este período o, si se pide, en todos (desde el mes de inicio hasta dos años adelante).
+  const base = todos
+    ? expandir(datos, sumarMeses(hogar.mesInicio, -1), sumarMeses(actual, 24))
+        .filter((m) => m.cuentaId === id || m.cuentaDestinoId === id)
+        .filter((m) => m.tipo === "transferencia" || resumenDe(cuenta, m) >= hogar.mesInicio)
+        .sort((a, b) => b.fecha.localeCompare(a.fecha) || a.descripcion.localeCompare(b.descripcion))
+    : lista;
+  const filtrada = hayFiltros(filtros) ? filtrar(base, filtros, categorias, datos.presupuestos ?? []) : lista;
+  const totalFiltrado = filtrada.reduce((total, m) => total + importe(m), 0);
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -213,7 +255,7 @@ async function Tarjeta({
         <TotalesTarjeta estado={estadoTarjeta(datos, id, fecha, hogar.mesInicio)} />
       </div>
 
-      <SelectorMes mes={mes} actual={actual} ruta={`/cuentas/${id}`} />
+      <SelectorMes mes={mes} actual={actual} ruta={`/cuentas/${id}`} consulta={enConsulta(filtros)} />
 
       <div className={`${caja} flex flex-col gap-3 p-4`}>
         <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -255,16 +297,37 @@ async function Tarjeta({
         </details>
       </div>
 
+      <FormularioFiltros
+        filtros={filtros}
+        mes={mes}
+        categorias={categorias}
+        presupuestos={datosHogar.presupuestos}
+        contrapartes={contrapartes}
+        tarjeta
+      />
+
+      {hayFiltros(filtros) && (
+        <p className="text-sm">
+          {filtrada.length} {filtrada.length === 1 ? "movimiento" : "movimientos"}{" "}
+          {todos ? "en todos los períodos" : `de ${base.length} del período`} · compras{" "}
+          <strong className="tabular-nums">$ {pesosExactos(totalFiltrado)}</strong>
+        </p>
+      )}
+
       <Leyenda />
 
       <ListaMovimientos
-        lista={lista}
+        lista={filtrada}
         nombres={new Map(datos.cuentas.map((c) => [c.id, c.nombre]))}
         categorias={new Map(categorias.map((c) => [c.id, c]))}
         guardados={new Set(datos.movimientos.map((m) => m.id))}
         opciones={delCierre.opciones}
         cuentaId={id}
-        vacio={`No hay movimientos de ${cuenta.nombre} en este período.`}
+        vacio={
+          hayFiltros(filtros)
+            ? "Ningún movimiento coincide con los filtros."
+            : `No hay movimientos de ${cuenta.nombre} en este período.`
+        }
       />
     </div>
   );

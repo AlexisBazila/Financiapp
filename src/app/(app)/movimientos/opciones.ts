@@ -1,6 +1,6 @@
 import type { DatosHogar } from "@/lib/datos/cargar";
 import { hoy, mesesEntre } from "@/lib/finanzas/fechas";
-import { calcularPrevision } from "@/lib/finanzas/prevision";
+import { calcularPrevision, esAhorro } from "@/lib/finanzas/prevision";
 import type { Mes, Movimiento } from "@/lib/finanzas/tipos";
 import type { Opciones } from "./formularios";
 
@@ -16,7 +16,12 @@ export function movimientosDelMes(
 ): { opciones: Opciones; pagosAutomaticos: Movimiento[]; ahorrosPrevistos: Movimiento[] } {
   const prevision =
     mes >= hogar.mesInicio
-      ? calcularPrevision(datos, { desde: hogar.mesInicio, meses: mesesEntre(hogar.mesInicio, mes) + 1, mesActual, hoy: hoy() })
+      ? calcularPrevision(datos, {
+          desde: hogar.mesInicio,
+          meses: mesesEntre(hogar.mesInicio, mes) + 1,
+          mesActual,
+          hoy: hoy(),
+        })
       : [];
   const delMes = prevision.find((m) => m.mes === mes);
   const nombres = new Map(datos.cuentas.map((c) => [c.id, c.nombre]));
@@ -25,7 +30,7 @@ export function movimientosDelMes(
     opciones: {
       cuentas: datos.cuentas
         .filter((c) => cuentasActivas.includes(c.id))
-        .map((c) => ({ id: c.id, nombre: c.nombre, tarjeta: Boolean(c.tarjeta) })),
+        .map((c) => ({ id: c.id, nombre: c.nombre, tarjeta: Boolean(c.tarjeta), ahorro: esAhorro(c) })),
       categorias: categorias.filter((c) => !c.archivada),
       contrapartes,
       aPagar: delMes?.vencidoTarjetas,

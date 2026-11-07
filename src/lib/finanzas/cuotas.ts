@@ -1,6 +1,6 @@
 import { diaDe, fechaEnMes, mesDe, sumarMeses } from "./fechas";
 import { cicloDe, resumenDeFecha } from "./tarjeta";
-import type { Centavos, Cuenta, Deuda, Movimiento, PlanCuotas, Prestamo } from "./tipos";
+import type { Centavos, Cuenta, Deuda, Fecha, Movimiento, PlanCuotas, Prestamo } from "./tipos";
 
 /** Reparte `total` en `n` partes enteras; la diferencia de redondeo va a la última. */
 export function repartir(total: Centavos, n: number): Centavos[] {
@@ -38,8 +38,14 @@ export function cuotasAlemanas(capital: Centavos, tasaAnual: number, n: number):
   });
 }
 
+/** Fecha de la cuota `numero` (desde 1) de una compra: el mismo día de la compra, un mes después de la anterior. */
+export function fechaDeCuota(fechaCompra: Fecha, numero: number): Fecha {
+  return fechaEnMes(sumarMeses(mesDe(fechaCompra), numero - 1), diaDe(fechaCompra));
+}
+
 /**
- * Genera "cuota N de M" para una compra en cuotas.
+ * Genera "cuota N de M" para una compra en cuotas. Cada cuota tiene la fecha del mismo día de la compra en
+ * su mes (comprado el 8/10: 8/10, 8/11, 8/12...).
  * En una tarjeta, la cuota 1 entra en el resumen que corresponde a la fecha de compra
  * y cada cuota siguiente en el resumen del mes siguiente.
  */
@@ -47,26 +53,21 @@ export function generarCuotasPlan(plan: PlanCuotas, cuenta: Cuenta): Movimiento[
   const montos = cuotasFrancesas(plan.montoTotal, plan.tasaAnual ?? 0, plan.cantidad);
   const primerResumen = cuenta.tarjeta ? resumenDeFecha(cuenta, plan.fechaCompra) : undefined;
 
-  return montos.map((monto, k) => {
-    const base = {
-      id: `${plan.id}#${k + 1}`,
-      descripcion: `${plan.descripcion} (${k + 1}/${plan.cantidad})`,
-      tipo: "egreso" as const,
-      monto,
-      cuentaId: plan.cuentaId,
-      categoria: plan.categoria,
-      categoriaId: plan.categoriaId,
-      contraparte: plan.contraparte,
-      estado: "planificado" as const,
-      origen: { tipo: "cuotas" as const, planId: plan.id, numero: k + 1, total: plan.cantidad },
-    };
-    if (primerResumen) {
-      const mesResumen = sumarMeses(primerResumen, k);
-      return { ...base, fecha: cicloDe(cuenta, mesResumen).cierre, mesResumen };
-    }
-    const mes = sumarMeses(mesDe(plan.fechaCompra), k);
-    return { ...base, fecha: fechaEnMes(mes, diaDe(plan.fechaCompra)) };
-  });
+  return montos.map((monto, k) => ({
+    id: `${plan.id}#${k + 1}`,
+    fecha: fechaDeCuota(plan.fechaCompra, k + 1),
+    fechaCompra: plan.fechaCompra,
+    descripcion: `${plan.descripcion} (${k + 1}/${plan.cantidad})`,
+    tipo: "egreso" as const,
+    monto,
+    cuentaId: plan.cuentaId,
+    categoria: plan.categoria,
+    categoriaId: plan.categoriaId,
+    contraparte: plan.contraparte,
+    estado: "planificado" as const,
+    origen: { tipo: "cuotas" as const, planId: plan.id, numero: k + 1, total: plan.cantidad },
+    ...(primerResumen ? { mesResumen: sumarMeses(primerResumen, k) } : {}),
+  }));
 }
 
 /** Cuotas de un préstamo según su sistema, o las cargadas a mano. */
