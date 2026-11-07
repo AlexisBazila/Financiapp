@@ -97,6 +97,11 @@ export interface Movimiento {
   origen: Origen;
   /** Solo en compras con tarjeta: resumen en el que cae, si ya se conoce. */
   mesResumen?: Mes;
+  /**
+   * En una cuota de una compra: el día de la compra, como guía para buscarla. La fecha de la cuota es ese
+   * mismo día en cada mes (comprado el 8/10, la cuota 3 es del 8/12).
+   */
+  fechaCompra?: Fecha;
   /** Chequeado contra el extracto del banco o la tarjeta. No cambia la previsión. */
   conciliado?: boolean;
   /**

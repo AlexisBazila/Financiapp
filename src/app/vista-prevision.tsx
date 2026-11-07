@@ -295,6 +295,10 @@ function Grilla({
         {valor(plan[i]) === 0 ? "–" : pesos(valor(plan[i]))}
       </div>
     );
+  const hayRetiros =
+    (plan ?? prevision).some((m) => m.retirosAhorro !== 0) || prevision.some((m) => m.retirosAhorro !== 0);
+  const hayAportesSueltos =
+    (plan ?? prevision).some((m) => m.aportesSueltos !== 0) || prevision.some((m) => m.aportesSueltos !== 0);
   const presupuestos = [
     ...new Map((plan ?? prevision).flatMap((m) => m.presupuestos).map((p) => [p.id, p.nombre])),
   ];
@@ -538,6 +542,31 @@ function Grilla({
               total,
               verde,
             )}
+            {hayRetiros &&
+              fila(
+                "↩ Sacado de ahorro",
+                (m: MesPrevision) => m.retirosAhorro,
+                "italic",
+                azul,
+              )}
+            <tr className={total}>
+              <th
+                scope="row"
+                className={primera}
+                title="Toda la plata con la que contás en el mes: lo que sobró del mes anterior, los ingresos y lo que sacaste de ahorro"
+              >
+                Total activos
+                <div className="text-xs font-normal text-black/50 dark:text-white/50">
+                  sobrante anterior + ingresos{hayRetiros ? " + sacado de ahorro" : ""}
+                </div>
+              </th>
+              {prevision.map((m, i) => (
+                <td key={m.mes} className={`${celda} ${signo(m.totalActivos)}`}>
+                  {sinReal(m) ? "" : m.totalActivos === 0 ? "–" : pesos(m.totalActivos)}
+                  {debajo((x) => x.totalActivos, i)}
+                </td>
+              ))}
+            </tr>
             {separador("Gastos de las cuentas · débito, efectivo y billeteras", "cuentas")}
             {abierto("cuentas") && egresos.map((c) => filaCategoria("egreso", c))}
             {fila(
@@ -572,7 +601,7 @@ function Grilla({
               total,
               signo,
             )}
-            {objetivos.length > 0 && (
+            {(objetivos.length > 0 || hayAportesSueltos) && (
               <>
                 {separador("Ahorro e inversión", "ahorro")}
                 {fila(
@@ -600,13 +629,21 @@ function Grilla({
                     </Fragment>
                   );
                 })}
+                {abierto("ahorro") &&
+                  hayAportesSueltos &&
+                  fila(
+                    "Otros ingresos a ahorro",
+                    (m: MesPrevision) => m.aportesSueltos,
+                    "bg-sky-50 font-semibold dark:bg-sky-500/10",
+                    azul,
+                  )}
               </>
             )}
             <tr className="border-t-2 border-black/20 dark:border-white/25">
               <th scope="row" className={`${primera} py-2.5`}>
                 <div className="text-base font-bold">Resto</div>
                 <div className="text-xs font-normal text-black/50 dark:text-white/50">
-                  sobrante anterior + resultado − ahorro · pasa al mes siguiente
+                  total activos − gastos del mes − ahorro · pasa al mes siguiente
                 </div>
               </th>
               {prevision.map((m, i) => (

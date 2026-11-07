@@ -1,10 +1,13 @@
 import Link from "next/link";
 import { cargarHogar } from "@/lib/datos/cargar";
 import { hoy, mesDe, mesesEntre, nombreMes, sumarMeses } from "@/lib/finanzas/fechas";
-import { calcularPrevision, disponibilidadDe } from "@/lib/finanzas/prevision";
+import { calcularPrevision, disponibilidadDe, esAhorro, expandir } from "@/lib/finanzas/prevision";
 import { requerirUsuario } from "@/lib/supabase/servidor";
 import { caja, textoSuave } from "../../estilos";
 import { pesosExactos } from "../../formato";
+import { NuevoMovimiento } from "../movimientos/formularios";
+import { ListaMovimientos } from "../movimientos/lista";
+import { movimientosDelMes } from "../movimientos/opciones";
 import { BotonQuitarMonto, FormularioMontoDelMes, FormularioObjetivo } from "./formularios";
 
 const MES = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -14,7 +17,8 @@ export default async function Ahorro({ searchParams }: PageProps<"/ahorro">) {
   const fecha = hoy();
   const actual = mesDe(fecha);
   const { supabase } = await requerirUsuario();
-  const { hogar, datos, cuentasActivas } = await cargarHogar(supabase);
+  const datosHogar = await cargarHogar(supabase);
+  const { hogar, datos, cuentasActivas, categorias } = datosHogar;
   const pedidoValido = typeof pedido === "string" && MES.test(pedido) ? pedido : actual;
   const mes = pedidoValido < hogar.mesInicio ? hogar.mesInicio : pedidoValido;
 
@@ -27,11 +31,30 @@ export default async function Ahorro({ searchParams }: PageProps<"/ahorro">) {
   const nombres = new Map(datos.cuentas.map((c) => [c.id, c.nombre]));
   const objetivos = datos.objetivos ?? [];
 
-  const opciones = { desde: hogar.mesInicio, meses: mesesEntre(hogar.mesInicio, mes) + 1, mesActual: actual, hoy: fecha };
+  const opciones = {
+    desde: hogar.mesInicio,
+    meses: mesesEntre(hogar.mesInicio, mes) + 1,
+    mesActual: actual,
+    hoy: fecha,
+  };
   const plan = calcularPrevision(datos, opciones).at(-1)!;
   const real = calcularPrevision(datos, { ...opciones, estados: ["real"] }).at(-1)!;
   const ahorrado = (m: typeof plan) => m.reserva + m.disponible48h;
   const diferencia = ahorrado(plan) - ahorrado(real);
+
+  // Ingresos a ahorro y retiros del mes: las transferencias entre una cuenta para gastar y una de ahorro.
+  const { opciones: deMovimientos, ahorrosPrevistos } = movimientosDelMes(datosHogar, mes, actual);
+  const deAhorro = new Set(datos.cuentas.filter(esAhorro).map((c) => c.id));
+  const movimientosDeAhorro = [...expandir(datos, mes, mes), ...ahorrosPrevistos]
+    .filter(
+      (m) =>
+        m.tipo === "transferencia" &&
+        mesDe(m.fecha) === mes &&
+        deAhorro.has(m.cuentaId) !== deAhorro.has(m.cuentaDestinoId ?? ""),
+    )
+    .sort((a, b) => b.fecha.localeCompare(a.fecha) || a.descripcion.localeCompare(b.descripcion));
+  const hayCuentasDeAhorro = deMovimientos.cuentas.some((c) => c.ahorro);
+  const fechaSugerida = mes === actual ? fecha : `${mes}-01`;
 
   const flecha =
     "rounded-lg border border-black/15 px-3 py-1.5 text-lg leading-none hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10";
@@ -41,8 +64,8 @@ export default async function Ahorro({ searchParams }: PageProps<"/ahorro">) {
       <div>
         <h1 className="text-2xl font-semibold">Ahorro e inversión</h1>
         <p className={`mt-1 text-sm ${textoSuave}`}>
-          Lo que planeás pasar cada mes a tus cuentas de ahorro o inversión. Las transferencias que cargues a la
-          cuenta de destino cuentan como hechas; lo que falta, la previsión lo pasa a fin de mes.
+          Lo que planeás pasar cada mes a tus cuentas de ahorro o inversión. Las transferencias que cargues a la cuenta
+          de destino cuentan como hechas; lo que falta, la previsión lo pasa a fin de mes.
         </p>
       </div>
 
@@ -85,6 +108,72 @@ export default async function Ahorro({ searchParams }: PageProps<"/ahorro">) {
         </p>
       </section>
 
+      <section className={`${caja} flex flex-col gap-4 p-5`}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-lg font-semibold">Ingresos y retiros de {nombreMes(mes)}</h3>
+            <p className={`text-sm ${textoSuave}`}>
+              Lo que pasás a tus cuentas de ahorro o sacás de ellas, confirmado o planificado. Lo que sacás suma al
+              total activos de la previsión: no es un ingreso, pero lo podés usar en el mes.
+            </p>
+          </div>
+          {hayCuentasDeAhorro && (
+            <div className="flex flex-wrap gap-2">
+              <NuevoMovimiento
+                {...deMovimientos}
+                tipoInicial="ingreso_ahorro"
+                texto="🐷 Ingreso a ahorro"
+                fechaSugerida={fechaSugerida}
+              />
+              <NuevoMovimiento
+                {...deMovimientos}
+                tipoInicial="retiro_ahorro"
+                texto="↩ Retiro de ahorro"
+                fechaSugerida={fechaSugerida}
+              />
+            </div>
+          )}
+        </div>
+        <div className="grid gap-3 text-sm sm:grid-cols-3">
+          <div>
+            <div className={textoSuave}>Ingresado (objetivos y otros)</div>
+            <div className="text-lg font-semibold tabular-nums text-sky-700 dark:text-sky-400">
+              $ {pesosExactos(plan.ahorroDelMes)}
+            </div>
+            <div className={`text-xs ${textoSuave}`}>confirmado $ {pesosExactos(real.ahorroDelMes)}</div>
+          </div>
+          <div>
+            <div className={textoSuave}>Sacado de ahorro</div>
+            <div className="text-lg font-semibold tabular-nums text-sky-700 dark:text-sky-400">
+              $ {pesosExactos(plan.retirosAhorro)}
+            </div>
+            <div className={`text-xs ${textoSuave}`}>confirmado $ {pesosExactos(real.retirosAhorro)}</div>
+          </div>
+          <div>
+            <div className={textoSuave}>Neto del mes</div>
+            <div className="text-lg font-semibold tabular-nums">
+              {plan.ahorroDelMes - plan.retirosAhorro < 0 ? "−" : ""}${" "}
+              {pesosExactos(Math.abs(plan.ahorroDelMes - plan.retirosAhorro))}
+            </div>
+            <div className={`text-xs ${textoSuave}`}>ingresado − sacado, con lo planificado</div>
+          </div>
+        </div>
+        {!hayCuentasDeAhorro ? (
+          <p className={`text-sm ${textoSuave}`}>
+            Para cargarlos necesitás una cuenta marcada como reserva de ahorro o disponible no inmediato.
+          </p>
+        ) : (
+          <ListaMovimientos
+            lista={movimientosDeAhorro}
+            nombres={nombres}
+            categorias={new Map(categorias.map((c) => [c.id, c]))}
+            guardados={new Set(datos.movimientos.map((m) => m.id))}
+            opciones={deMovimientos}
+            vacio={`No hay ingresos ni retiros de ahorro en ${nombreMes(mes)}.`}
+          />
+        )}
+      </section>
+
       {objetivos.length === 0 && <p className={textoSuave}>Todavía no hay objetivos de ahorro.</p>}
       <div className="grid gap-4 lg:grid-cols-2">
         {objetivos.map((o) => {
@@ -99,7 +188,9 @@ export default async function Ahorro({ searchParams }: PageProps<"/ahorro">) {
                   {o.icono} {o.nombre}
                 </h3>
                 <span className="tabular-nums">
-                  {o.porcentaje ? `${o.porcentaje.toLocaleString("es-AR")}% de los ingresos` : `$ ${pesosExactos(o.monto ?? 0)} / mes`}
+                  {o.porcentaje
+                    ? `${o.porcentaje.toLocaleString("es-AR")}% de los ingresos`
+                    : `$ ${pesosExactos(o.monto ?? 0)} / mes`}
                 </span>
               </div>
               {delMes ? (
@@ -115,12 +206,15 @@ export default async function Ahorro({ searchParams }: PageProps<"/ahorro">) {
                   </div>
                   <div className="flex flex-wrap justify-between gap-2 text-sm">
                     <span>
-                      Objetivo de {nombreMes(mes)} <strong className="tabular-nums">$ {pesosExactos(delMes.objetivo)}</strong>
+                      Objetivo de {nombreMes(mes)}{" "}
+                      <strong className="tabular-nums">$ {pesosExactos(delMes.objetivo)}</strong>
                     </span>
                     <span>
                       Hecho <strong className="tabular-nums">$ {pesosExactos(delMes.hecho)}</strong>
                     </span>
-                    <span className={falta > 0 ? "text-sky-700 dark:text-sky-400" : "text-green-700 dark:text-green-400"}>
+                    <span
+                      className={falta > 0 ? "text-sky-700 dark:text-sky-400" : "text-green-700 dark:text-green-400"}
+                    >
                       {falta > 0 ? (
                         <>
                           Falta <strong className="tabular-nums">$ {pesosExactos(falta)}</strong>

@@ -16,9 +16,14 @@ export interface Filtros {
   confirmado?: string;
   /** "si": conciliados; "no": sin conciliar. */
   conciliado?: string;
+  /** Fecha de compra (o del movimiento, si no es una cuota) desde y hasta, "AAAA-MM-DD". */
+  desde?: string;
+  hasta?: string;
+  /** En una tarjeta, "si" busca en todos los períodos y no solo en el elegido. */
+  todos?: string;
 }
 
-const CLAVES = ["cat", "tipo", "a", "q", "confirmado", "conciliado"] as const;
+const CLAVES = ["cat", "tipo", "a", "q", "confirmado", "conciliado", "desde", "hasta", "todos"] as const;
 
 export function leerFiltros(params: Record<string, string | string[] | undefined>): Filtros {
   const filtros: Filtros = {};
@@ -30,6 +35,12 @@ export function leerFiltros(params: Record<string, string | string[] | undefined
 }
 
 export const hayFiltros = (f: Filtros) => CLAVES.some((c) => f[c]);
+
+/** Los filtros como parámetros de la URL, para conservarlos al cambiar de mes: "&tipo=egreso". */
+export const enConsulta = (f: Filtros) =>
+  Object.entries(f)
+    .map(([clave, valor]) => `&${clave}=${encodeURIComponent(valor)}`)
+    .join("");
 
 /** Sin mayúsculas ni tildes, para buscar texto. */
 const normal = (texto: string) => texto.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
@@ -72,7 +83,9 @@ export function filtrar(
       (!elegidas || montoEnCategorias(m, elegidas) !== 0) &&
       (!f.tipo || m.tipo === f.tipo) &&
       (!contraparte || normal(m.contraparte ?? "").includes(contraparte)) &&
-      (!texto || normal(m.descripcion).includes(texto)) &&
+      (!texto || normal(m.descripcion).includes(texto) || normal(m.contraparte ?? "").includes(texto)) &&
+      (!f.desde || (m.fechaCompra ?? m.fecha) >= f.desde) &&
+      (!f.hasta || (m.fechaCompra ?? m.fecha) <= f.hasta) &&
       (!f.confirmado || (f.confirmado === "si") === (m.estado === "real")) &&
       (!f.conciliado || (f.conciliado === "si") === Boolean(m.estado === "real" && m.conciliado)),
   );
@@ -85,12 +98,15 @@ export function FormularioFiltros({
   categorias,
   presupuestos,
   contrapartes,
+  tarjeta = false,
 }: {
   filtros: Filtros;
   mes: string;
   categorias: Categoria[];
   presupuestos: Presupuesto[];
   contrapartes: string[];
+  /** En una tarjeta: buscar en todos los períodos y por fecha de compra. */
+  tarjeta?: boolean;
 }) {
   return (
     <details className="rounded-xl border border-black/10 p-4 text-sm dark:border-white/15" open={hayFiltros(filtros)}>
@@ -133,9 +149,9 @@ export function FormularioFiltros({
           Tipo
           <select name="tipo" defaultValue={filtros.tipo ?? ""} className={campo}>
             <option value="">Todos</option>
-            <option value="egreso">Solo gastos</option>
-            <option value="ingreso">Solo ingresos</option>
-            <option value="transferencia">Solo transferencias</option>
+            <option value="egreso">{tarjeta ? "Solo compras" : "Solo gastos"}</option>
+            <option value="ingreso">{tarjeta ? "Solo devoluciones" : "Solo ingresos"}</option>
+            <option value="transferencia">{tarjeta ? "Solo pagos" : "Solo transferencias"}</option>
           </select>
         </label>
         <label className={etiqueta}>
@@ -157,6 +173,27 @@ export function FormularioFiltros({
           Descripción
           <input name="q" type="search" defaultValue={filtros.q} placeholder="Supermercado" className={campo} />
         </label>
+        {tarjeta && (
+          <>
+            <label className={etiqueta}>
+              Buscar en
+              <select name="todos" defaultValue={filtros.todos ?? ""} className={campo}>
+                <option value="">Este período</option>
+                <option value="si">Todos los períodos</option>
+              </select>
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <label className={etiqueta}>
+                Compra desde
+                <input name="desde" type="date" defaultValue={filtros.desde} className={campo} />
+              </label>
+              <label className={etiqueta}>
+                Compra hasta
+                <input name="hasta" type="date" defaultValue={filtros.hasta} className={campo} />
+              </label>
+            </div>
+          </>
+        )}
         <label className={etiqueta}>
           Confirmado
           <select name="confirmado" defaultValue={filtros.confirmado ?? ""} className={campo}>

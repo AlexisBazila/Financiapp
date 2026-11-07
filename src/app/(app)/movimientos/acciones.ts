@@ -60,9 +60,11 @@ function mensaje(error: { code?: string; message: string }): string {
 export async function guardarMovimiento(base: Base | null, _: Resultado, form: FormData): Promise<Resultado> {
   const { supabase } = await requerirUsuario();
   const tipoElegido = texto(form, "tipo");
-  // Un pago de tarjeta se guarda como transferencia de una cuenta a la tarjeta.
+  // Un pago de tarjeta se guarda como transferencia de una cuenta a la tarjeta; un ingreso a ahorro o un
+  // retiro de ahorro, como transferencia entre una cuenta para gastar y una de ahorro.
   const pagoDeTarjeta = tipoElegido === "pago_tarjeta";
-  const tipo = pagoDeTarjeta ? "transferencia" : tipoElegido;
+  const deAhorro = tipoElegido === "ingreso_ahorro" || tipoElegido === "retiro_ahorro";
+  const tipo = pagoDeTarjeta || deAhorro ? "transferencia" : tipoElegido;
   const fecha = texto(form, "fecha");
   const monto = pesosACentavos(texto(form, "monto"));
   const cuentaId = texto(form, "cuenta_id");
@@ -83,6 +85,21 @@ export async function guardarMovimiento(base: Base | null, _: Resultado, form: F
     if (tipoDe(destinoId) !== "tarjeta") return { error: "Elegí la tarjeta que pagás." };
     if (tipoDe(cuentaId) === "tarjeta") return { error: "Elegí la cuenta desde la que pagás." };
   }
+  if (deAhorro) {
+    const { data } = await supabase
+      .from("cuentas")
+      .select("id, tipo, disponibilidad, moneda")
+      .in("id", [cuentaId, destinoId]);
+    const esAhorro = (id: string) => {
+      const c = data?.find((x) => x.id === id);
+      return Boolean(
+        c && c.tipo !== "tarjeta" && (c.disponibilidad !== "inmediata" || (c.moneda && c.moneda !== "ARS")),
+      );
+    };
+    const [ahorro, otra] = tipoElegido === "ingreso_ahorro" ? [destinoId, cuentaId] : [cuentaId, destinoId];
+    if (!esAhorro(ahorro)) return { error: "Elegí una cuenta de ahorro o inversión." };
+    if (esAhorro(otra)) return { error: "La otra cuenta tiene que ser una para gastar, no de ahorro." };
+  }
   // En un reparto, la categoría del movimiento es solo para identificarlo (su ícono en la lista): la
   // elegida aparte o, si no, la de la primera parte. Lo que cuenta son las partes.
   const principal =
@@ -102,7 +119,15 @@ export async function guardarMovimiento(base: Base | null, _: Resultado, form: F
     cuenta_id: cuentaId,
     cuenta_destino_id: tipo === "transferencia" ? destinoId : null,
     ...categoria,
-    descripcion: texto(form, "descripcion") || (pagoDeTarjeta ? "Pago de tarjeta" : ""),
+    descripcion:
+      texto(form, "descripcion") ||
+      (pagoDeTarjeta
+        ? "Pago de tarjeta"
+        : tipoElegido === "ingreso_ahorro"
+          ? "Ingreso a ahorro"
+          : tipoElegido === "retiro_ahorro"
+            ? "Retiro de ahorro"
+            : ""),
     contraparte: tipo === "transferencia" ? null : texto(form, "contraparte").slice(0, 80) || null,
     reparto: reparto?.partes ?? null,
     estado,

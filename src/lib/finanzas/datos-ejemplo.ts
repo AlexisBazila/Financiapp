@@ -47,6 +47,17 @@ export const datosEjemplo: Datos = {
   movimientos: [
     ...apartarAhorro,
     {
+      id: "rescate-fci",
+      fecha: "2027-01-10",
+      descripcion: "Rescate del fondo",
+      tipo: "transferencia",
+      monto: $(150_000),
+      cuentaId: "fci",
+      cuentaDestinoId: "banco",
+      estado: "planificado",
+      origen: { tipo: "manual" },
+    },
+    {
       id: "aguinaldo-dic",
       fecha: "2026-12-18",
       descripcion: "Aguinaldo",

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { cuotasAlemanas, cuotasFrancesas, generarCuotasPlan, repartir } from "./cuotas";
 import { consolidarEscenario, aplicarEscenario } from "./escenarios";
 import { sumarMeses } from "./fechas";
-import { calcularPrevision, categoriaResto, correPresupuesto, montoPresupuesto } from "./prevision";
+import { calcularPrevision, categoriaResto, correPresupuesto, expandir, montoPresupuesto } from "./prevision";
 import { confirmar, instanciarRecurrente } from "./recurrentes";
 import { estadoTarjeta, periodoDe } from "./estado-tarjeta";
 import { resumenDeFecha } from "./tarjeta";
@@ -76,6 +76,45 @@ describe("cuotas", () => {
     expect(cuotas.map((c) => c.mesResumen)).toEqual(["2026-12", "2027-01", "2027-02"]);
     expect(cuotas[0].descripcion).toBe("Heladera (1/3)");
     expect(cuotas[2].origen).toEqual({ tipo: "cuotas", planId: "heladera", numero: 3, total: 3 });
+  });
+
+  const silla: PlanCuotas = {
+    id: "silla",
+    descripcion: "Silla",
+    categoria: "Hogar",
+    cuentaId: "visa",
+    fechaCompra: "2026-10-08",
+    montoTotal: 300_000_00,
+    cantidad: 3,
+  };
+
+  it("cada cuota tiene el día de la compra en su mes y guarda la fecha de compra", () => {
+    const cuotas = generarCuotasPlan(silla, visa);
+    expect(cuotas.map((c) => c.fecha)).toEqual(["2026-10-08", "2026-11-08", "2026-12-08"]);
+    expect(cuotas.map((c) => c.mesResumen)).toEqual(["2026-10", "2026-11", "2026-12"]);
+    expect(new Set(cuotas.map((c) => c.fechaCompra))).toEqual(new Set(["2026-10-08"]));
+    // Comprado el 31: en los meses más cortos, el último día.
+    const fin = generarCuotasPlan({ ...silla, fechaCompra: "2027-01-31" }, banco);
+    expect(fin.map((c) => c.fecha)).toEqual(["2027-01-31", "2027-02-28", "2027-03-31"]);
+  });
+
+  it("una cuota ya cargada con la fecha del cierre pasa al día de la compra, en el mismo resumen", () => {
+    const cargada: Movimiento = {
+      ...generarCuotasPlan(silla, visa)[1],
+      id: "guardada",
+      fecha: "2026-11-20",
+      fechaCompra: undefined,
+      estado: "real",
+    };
+    const todos = expandir({ ...vacio(), planesCuotas: [silla], movimientos: [cargada] }, "2026-10", "2026-12");
+    const segunda = todos.filter((m) => m.origen.tipo === "cuotas" && m.origen.numero === 2);
+    expect(segunda).toHaveLength(1);
+    expect(segunda[0]).toMatchObject({
+      id: "guardada",
+      fecha: "2026-11-08",
+      fechaCompra: "2026-10-08",
+      mesResumen: "2026-11",
+    });
   });
 
   it("cada cuota lleva el comercio de la compra, para conciliar con el resumen", () => {
@@ -764,6 +803,58 @@ describe("objetivos de ahorro", () => {
     // Arranca con lo que hay para gastar en el banco.
     expect(nov).toMatchObject({ sobranteAnterior: 500_000_00, resto: 550_000_00 });
     expect(dic).toMatchObject({ sobranteAnterior: 550_000_00, resto: 500_000_00 });
+  });
+
+  it("lo sacado de ahorro suma al total activos y al resto, sin ser un ingreso", () => {
+    const retiro: Movimiento = {
+      id: "retiro",
+      fecha: "2026-12-15",
+      descripcion: "Retiro de ahorro",
+      tipo: "transferencia",
+      monto: 40_700_00,
+      cuentaId: "ahorro",
+      cuentaDestinoId: "banco",
+      estado: "planificado",
+      origen: { tipo: "manual" },
+    };
+    const datos = {
+      ...conAhorro(ahorroMensual, [sueldo("2026-11", 150_000_00), sueldo("2026-12", 50_000_00), retiro]),
+      objetivos: [],
+    };
+    const [nov, dic] = calcularPrevision(datos, { desde: "2026-11", meses: 2 });
+    expect(nov).toMatchObject({ sobranteAnterior: 500_000_00, totalActivos: 650_000_00, resto: 650_000_00 });
+    expect(dic).toMatchObject({
+      sobranteAnterior: 650_000_00,
+      ingresos: 50_000_00,
+      retirosAhorro: 40_700_00,
+      totalActivos: 740_700_00,
+      resto: 740_700_00,
+    });
+    expect(dic.disponible).toBe(740_700_00);
+    // En lo real no cuenta hasta confirmarlo.
+    const [, real] = calcularPrevision(datos, { desde: "2026-11", meses: 2, estados: ["real"] });
+    expect(real.retirosAhorro).toBe(0);
+  });
+
+  it("un ingreso a ahorro sin objetivo cuenta como ahorro del mes y baja el resto", () => {
+    const plazo: Cuenta = { id: "plazo", nombre: "Plazo fijo", tipo: "inversion", disponibilidad: "48h", saldoInicial: 0 };
+    const aPlazo: Movimiento = {
+      id: "plazo-fijo",
+      fecha: "2026-11-12",
+      descripcion: "Plazo fijo",
+      tipo: "transferencia",
+      monto: 30_000_00,
+      cuentaId: "banco",
+      cuentaDestinoId: "plazo",
+      estado: "real",
+      origen: { tipo: "manual" },
+    };
+    const base = conAhorro(ahorroMensual, [aPlazo]);
+    const [nov] = calcularPrevision({ ...base, cuentas: [...base.cuentas, plazo] }, { desde: "2026-11", meses: 1 });
+    expect(nov.aportesSueltos).toBe(30_000_00);
+    expect(nov.ahorroDelMes).toBe(130_000_00);
+    expect(nov.resto).toBe(370_000_00);
+    expect(nov.resto).toBe(nov.disponible);
   });
 
   it("en los meses pasados no prevé lo que no se transfirió", () => {

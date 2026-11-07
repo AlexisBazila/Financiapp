@@ -1,4 +1,4 @@
-import { generarCuotasDeuda, generarCuotasPlan, generarCuotasPrestamo } from "./cuotas";
+import { fechaDeCuota, generarCuotasDeuda, generarCuotasPlan, generarCuotasPrestamo } from "./cuotas";
 import { diasDelMes, fechaEnMes, mesDe, mesesEntre, rangoMeses, sumarMeses } from "./fechas";
 import { instanciarRecurrente } from "./recurrentes";
 import { cicloDe, resumenDeFecha } from "./tarjeta";
@@ -12,6 +12,7 @@ import type {
   Movimiento,
   ObjetivoAhorro,
   ParteMovimiento,
+  PlanCuotas,
   Presupuesto,
 } from "./tipos";
 
@@ -156,11 +157,23 @@ export interface MesPrevision {
    */
   ahorroDelMes: Centavos;
   /**
+   * Lo pasado en el mes de las cuentas para gastar a las de ahorro o inversión sin un objetivo que las tenga
+   * como destino (también suma a `ahorroDelMes`).
+   */
+  aportesSueltos: Centavos;
+  /**
+   * Lo sacado en el mes de las cuentas de ahorro o inversión (reserva, no inmediatas) a las cuentas para
+   * gastar o a una tarjeta. No es un ingreso, pero es plata que se puede usar en el mes.
+   */
+  retirosAhorro: Centavos;
+  /**
    * El resto del mes anterior: lo que sobró sin asignar (positivo) o lo que faltó (negativo). En el primer
    * mes, la plata disponible para gastar al comienzo del mes.
    */
   sobranteAnterior: Centavos;
-  /** sobrante anterior + resultado - ahorro del mes. Pasa al mes siguiente. */
+  /** Toda la plata con la que se cuenta en el mes: sobrante anterior + ingresos + lo sacado de ahorro. */
+  totalActivos: Centavos;
+  /** total activos - gastos del mes - ahorro del mes. Pasa al mes siguiente. */
   resto: Centavos;
 }
 
@@ -207,13 +220,32 @@ export function expandir(datos: Datos, desde: Mes, hasta: Mes): Movimiento[] {
   };
   const cargadas = new Set(datos.movimientos.map((m) => claveCuota(m.origen)).filter(Boolean));
   const sinCargar = (m: Movimiento) => !cargadas.has(claveCuota(m.origen));
+  const planes = new Map(datos.planesCuotas.map((p) => [p.id, p]));
   return [
-    ...datos.movimientos,
+    ...datos.movimientos.map((m) => conFechaDeCuota(m, planes, cuentas)),
     ...datos.planesCuotas.flatMap((p) => generarCuotasPlan(p, cuenta(p.cuentaId))).filter(sinCargar),
     ...datos.prestamos.flatMap(generarCuotasPrestamo).filter(sinCargar),
     ...(datos.deudas ?? []).flatMap((d) => generarCuotasDeuda(d, cuenta(d.cuentaId))).filter(sinCargar),
     ...datos.recurrentes.flatMap((r) => instanciarRecurrente(r, datos.movimientos, desde, hasta)),
   ];
+}
+
+/**
+ * Una cuota de compra ya cargada (confirmada o editada) lleva la fecha de la compra. Antes las cuotas con
+ * tarjeta se generaban con la fecha del cierre de su resumen: si se cargó con esa fecha, pasa a la del día de
+ * la compra en su mes. El resumen en el que cae no cambia (lo da `mesResumen`).
+ */
+function conFechaDeCuota(m: Movimiento, planes: Map<string, PlanCuotas>, cuentas: Map<string, Cuenta>): Movimiento {
+  if (m.origen.tipo !== "cuotas") return m;
+  const plan = planes.get(m.origen.planId);
+  if (!plan) return m;
+  const cuenta = cuentas.get(m.cuentaId);
+  const conCierre = cuenta?.tarjeta && m.mesResumen && m.fecha === cicloDe(cuenta, m.mesResumen).cierre;
+  return {
+    ...m,
+    fechaCompra: plan.fechaCompra,
+    ...(conCierre ? { fecha: fechaDeCuota(plan.fechaCompra, m.origen.numero) } : {}),
+  };
 }
 
 /** Mes en que sale la plata de un movimiento: el del vencimiento del resumen si es con tarjeta. */
@@ -231,6 +263,16 @@ export function mesDeGasto(mov: Movimiento, cuentas: Map<string, Cuenta>): Mes {
   const cuenta = cuentas.get(mov.cuentaId);
   if (!cuenta?.tarjeta || mov.tipo === "transferencia") return mesDe(mov.fecha);
   return mesDe(cicloDe(cuenta, mov.mesResumen ?? resumenDeFecha(cuenta, mov.fecha)).cierre);
+}
+
+/** Cuenta de ahorro o inversión: no es tarjeta y su plata no está para gastar ya. */
+export function esAhorro(c: Cuenta): boolean {
+  return !c.tarjeta && disponibilidadDe(c) !== "inmediata";
+}
+
+/** Cuenta con plata para gastar ya (no tarjeta). */
+function paraGastar(c: Cuenta): boolean {
+  return !c.tarjeta && disponibilidadDe(c) === "inmediata";
 }
 
 /** Cuentas en otra moneda: cuentan como no inmediatas, porque hay que cambiarlas para gastarlas. */
@@ -657,10 +699,28 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
       });
     }
 
+    // Movimientos de ahorro sin objetivo: lo que entra a una cuenta de ahorro desde una para gastar es
+    // ahorro del mes; lo que sale de una de ahorro a una para gastar (o a una tarjeta) es plata que se suma.
+    const destinosDeObjetivos = new Set(objetivos.map((o) => o.cuentaDestinoId));
+    let aportesSueltos = 0;
+    let retirosAhorro = 0;
+    for (const m of movimientos) {
+      if (m.tipo !== "transferencia" || mesDe(m.fecha) !== mes) continue;
+      const origen = cuentas.get(m.cuentaId);
+      const destino = cuentas.get(m.cuentaDestinoId ?? "");
+      if (!origen || !destino) continue;
+      const enPesos = Math.round(m.monto * cambioDe(origen));
+      if (esAhorro(origen) && (destino.tarjeta || paraGastar(destino))) retirosAhorro += enPesos;
+      else if (paraGastar(origen) && esAhorro(destino) && !destinosDeObjetivos.has(destino.id))
+        aportesSueltos += enPesos;
+    }
+    ahorroDelMes += aportesSueltos;
+
     const sobranteAnterior = restoAnterior;
+    const totalActivos = sobranteAnterior + ingresos + retirosAhorro;
     // Las compras con tarjeta se cuentan como gasto el mes del cierre, pero la plata sale cuando vence.
     const gastosDelMes = egresosCuentas + venceTarjetas;
-    restoAnterior = sobranteAnterior + ingresos - gastosDelMes - ahorroDelMes;
+    restoAnterior = totalActivos - gastosDelMes - ahorroDelMes;
 
     let disponible = 0;
     let disponible48h = 0;
@@ -708,7 +768,10 @@ export function calcularPrevision(datos: Datos, opciones: OpcionesPrevision): Me
       presupuestos: presupuestosPorMes.get(mes) ?? [],
       objetivos,
       ahorroDelMes,
+      aportesSueltos,
+      retirosAhorro,
       sobranteAnterior,
+      totalActivos,
       resto: restoAnterior,
     };
   });

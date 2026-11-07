@@ -7,14 +7,17 @@ import type { Movimiento } from "@/lib/finanzas/tipos";
 import { boton, botonSecundario, campo, etiqueta } from "../../estilos";
 import { pesosExactos } from "../../formato";
 import { CampoContraparte } from "./contraparte";
+import { tipoDe } from "./tipo";
 import { CategoriaOReparto } from "./reparto";
 import { borrarMovimiento, guardarMovimiento, marcar, type Base } from "./acciones";
 
-interface Opcion {
+export interface Opcion {
   id: string;
   nombre: string;
   /** Si es una tarjeta de crédito. */
   tarjeta?: boolean;
+  /** Si es una cuenta de ahorro o inversión (reserva o no inmediata). */
+  ahorro?: boolean;
 }
 
 export interface Opciones {
@@ -51,13 +54,24 @@ function FormularioMovimiento({
 }) {
   const [estado, accion, pendiente] = useActionState(guardarMovimiento.bind(null, base ?? null), {});
   const tarjetas = cuentas.filter((c) => c.tarjeta);
-  const esPagoDeTarjeta = (m: Movimiento) =>
-    m.tipo === "transferencia" && tarjetas.some((t) => t.id === m.cuentaDestinoId);
-  const [tipo, setTipo] = useState<string>(
-    inicial && esPagoDeTarjeta(inicial) ? "pago_tarjeta" : (inicial?.tipo ?? tipoInicial),
-  );
+  const ahorros = cuentas.filter((c) => c.ahorro);
+  const paraGastar = cuentas.filter((c) => !c.tarjeta && !c.ahorro);
+  const [tipo, setTipo] = useState<string>(inicial ? tipoDe(inicial, cuentas) : tipoInicial);
   const esPago = tipo === "pago_tarjeta";
-  const esTransferencia = tipo === "transferencia" || esPago;
+  const esIngresoAhorro = tipo === "ingreso_ahorro";
+  const esRetiroAhorro = tipo === "retiro_ahorro";
+  const esTransferencia = tipo === "transferencia" || esPago || esIngresoAhorro || esRetiroAhorro;
+  // Cuentas de cada lado según el tipo: un ingreso a ahorro va de una cuenta para gastar a una de ahorro,
+  // un retiro al revés.
+  const origenes = esPago
+    ? cuentas.filter((c) => !c.tarjeta)
+    : esIngresoAhorro
+      ? paraGastar
+      : esRetiroAhorro
+        ? ahorros
+        : cuentas;
+  const destinos = esIngresoAhorro ? ahorros : esRetiroAhorro ? paraGastar : cuentas;
+  const sugerida = (lista: Opcion[], id?: string) => (id && lista.some((c) => c.id === id) ? id : undefined);
   const [total, setTotal] = useState(inicial ? pesosExactos(inicial.original?.monto ?? inicial.monto) : "");
   const sugeridaEsTarjeta = tarjetas.some((t) => t.id === cuentaSugerida);
   const [tarjeta, setTarjeta] = useState(
@@ -82,6 +96,12 @@ function FormularioMovimiento({
           ["ingreso", "Ingreso"],
           ["transferencia", "Entre cuentas"],
           ...(tarjetas.length > 0 ? [["pago_tarjeta", "Pago de tarjeta"]] : []),
+          ...(ahorros.length > 0 && paraGastar.length > 0
+            ? [
+                ["ingreso_ahorro", "🐷 Ingreso a ahorro"],
+                ["retiro_ahorro", "↩ Retiro de ahorro"],
+              ]
+            : []),
         ].map(([valor, nombre]) => (
           <label
             key={valor}
@@ -141,11 +161,11 @@ function FormularioMovimiento({
         <select
           name="cuenta_id"
           required
-          defaultValue={inicial?.cuentaId ?? (esPago && sugeridaEsTarjeta ? undefined : cuentaSugerida)}
+          defaultValue={inicial?.cuentaId ?? sugerida(origenes, cuentaSugerida)}
           key={tipo}
           className={campo}
         >
-          {(esPago ? cuentas.filter((c) => !c.tarjeta) : cuentas).map((c) => (
+          {origenes.map((c) => (
             <option key={c.id} value={c.id}>
               {c.nombre}
             </option>
@@ -172,8 +192,16 @@ function FormularioMovimiento({
       ) : esTransferencia ? (
         <label className={etiqueta}>
           Hacia
-          <select name="cuenta_destino_id" required defaultValue={inicial?.cuentaDestinoId} className={campo}>
-            {cuentas.map((c) => (
+          <select
+            name="cuenta_destino_id"
+            required
+            defaultValue={
+              inicial?.cuentaDestinoId ?? (esIngresoAhorro ? sugerida(destinos, cuentaSugerida) : undefined)
+            }
+            key={tipo}
+            className={campo}
+          >
+            {destinos.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.nombre}
               </option>
@@ -202,7 +230,15 @@ function FormularioMovimiento({
         <input
           name="descripcion"
           defaultValue={inicial?.descripcion}
-          placeholder={esPago ? "Pago de tarjeta" : undefined}
+          placeholder={
+            esPago
+              ? "Pago de tarjeta"
+              : esIngresoAhorro
+                ? "Ingreso a ahorro"
+                : esRetiroAhorro
+                  ? "Retiro de ahorro"
+                  : undefined
+          }
           className={campo}
         />
       </label>
@@ -249,8 +285,17 @@ function FormularioMovimiento({
 export function NuevoMovimiento({
   fechaSugerida,
   cuentaSugerida,
+  tipoInicial,
+  texto,
   ...opciones
-}: Opciones & { fechaSugerida: string; cuentaSugerida?: string }) {
+}: Opciones & {
+  fechaSugerida: string;
+  cuentaSugerida?: string;
+  /** Tipo con el que arranca el formulario. */
+  tipoInicial?: string;
+  /** Con `texto`, un botón común en su lugar de la página en vez del redondo flotante. */
+  texto?: string;
+}) {
   const [abierto, setAbierto] = useState(false);
   // Cambia en cada apertura para que el formulario arranque vacío.
   const [vez, setVez] = useState(0);
@@ -276,23 +321,31 @@ export function NuevoMovimiento({
   };
   const cerrar = () => ventana.current?.close();
 
-  // En un portal, para que el botón fijo no dependa de dónde está ubicado en la página.
-  return createPortal(
+  const contenido = (
     <>
-      <div className="fixed right-5 bottom-5 z-30 flex items-center gap-3 print:hidden">
-        {guardado && (
-          <span className="rounded-full bg-green-700 px-3 py-1.5 text-sm text-white shadow-lg">Guardado ✓</span>
-        )}
-        <button
-          type="button"
-          onClick={abrir}
-          aria-label="Nuevo movimiento"
-          title="Nuevo movimiento"
-          className="flex size-14 items-center justify-center rounded-full bg-foreground text-3xl leading-none text-background shadow-xl transition-transform hover:scale-105 active:scale-95"
-        >
-          +
-        </button>
-      </div>
+      {texto ? (
+        <span className="inline-flex items-center gap-3">
+          <button type="button" onClick={abrir} className={botonSecundario}>
+            {texto}
+          </button>
+          {guardado && <span className="text-sm text-green-700 dark:text-green-400">Guardado ✓</span>}
+        </span>
+      ) : (
+        <div className="fixed right-5 bottom-5 z-30 flex items-center gap-3 print:hidden">
+          {guardado && (
+            <span className="rounded-full bg-green-700 px-3 py-1.5 text-sm text-white shadow-lg">Guardado ✓</span>
+          )}
+          <button
+            type="button"
+            onClick={abrir}
+            aria-label="Nuevo movimiento"
+            title="Nuevo movimiento"
+            className="flex size-14 items-center justify-center rounded-full bg-foreground text-3xl leading-none text-background shadow-xl transition-transform hover:scale-105 active:scale-95"
+          >
+            +
+          </button>
+        </div>
+      )}
       <dialog
         ref={ventana}
         onClose={() => setAbierto(false)}
@@ -301,7 +354,7 @@ export function NuevoMovimiento({
       >
         <div className="flex flex-col gap-4 p-5">
           <div className="flex items-start justify-between gap-4">
-            <h3 className="text-lg font-semibold">Nuevo movimiento</h3>
+            <h3 className="text-lg font-semibold">{texto?.replace(/^[＋+−-]\s*/, "") ?? "Nuevo movimiento"}</h3>
             <button
               type="button"
               onClick={cerrar}
@@ -317,6 +370,7 @@ export function NuevoMovimiento({
               {...opciones}
               fechaSugerida={fechaSugerida}
               cuentaSugerida={cuentaSugerida}
+              tipoInicial={tipoInicial}
               alGuardar={() => {
                 setGuardado(true);
                 cerrar();
@@ -326,9 +380,10 @@ export function NuevoMovimiento({
           )}
         </div>
       </dialog>
-    </>,
-    document.body,
+    </>
   );
+  // El botón flotante va en un portal, para que no dependa de dónde está ubicado en la página.
+  return texto ? contenido : createPortal(contenido, document.body);
 }
 
 /** Confirmar, conciliar, editar y borrar un movimiento de la lista. */

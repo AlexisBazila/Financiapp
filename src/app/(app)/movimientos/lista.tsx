@@ -10,6 +10,7 @@ import { caja, textoSuave } from "../../estilos";
 import { pesosExactos } from "../../formato";
 import { Punto } from "../categorias/selector";
 import { AccionesMovimiento, type Opciones } from "./formularios";
+import { tipoDe } from "./tipo";
 
 export const MES = /^\d{4}-(0[1-9]|1[0-2])$/;
 
@@ -60,6 +61,12 @@ export function SelectorMes({
       )}
     </nav>
   );
+}
+
+/** "8/10/26" */
+export function fechaCorta(fecha: string): string {
+  const [a, m, d] = fecha.split("-");
+  return `${Number(d)}/${Number(m)}/${a.slice(2)}`;
 }
 
 /** Cómo está un movimiento: sin confirmar, confirmado o conciliado con el banco. */
@@ -238,8 +245,8 @@ function Fila({
   const tono = categoria?.color ?? padre?.color;
   const cuota =
     m.origen.tipo === "cuotas" || m.origen.tipo === "prestamo" || m.origen.tipo === "deuda" ? m.origen : undefined;
-  const pagoDeTarjeta =
-    m.tipo === "transferencia" && opciones.cuentas.some((c) => c.tarjeta && c.id === m.cuentaDestinoId);
+  const tipoTransferencia = m.tipo === "transferencia" ? tipoDe(m, opciones.cuentas) : undefined;
+  const pagoDeTarjeta = tipoTransferencia === "pago_tarjeta";
 
   return (
     <li
@@ -265,6 +272,11 @@ function Fila({
               ? `${nombres.get(m.cuentaId)} → ${nombres.get(m.cuentaDestinoId ?? "")}`
               : `${nombres.get(m.cuentaId)}${m.contraparte ? ` ${s > 0 ? "←" : "→"} ${m.contraparte}` : ""}${ruta ? ` · ${ruta}` : ""}`}
           </span>
+          {m.fechaCompra && m.fechaCompra !== m.fecha && (
+            <span className={`block text-xs ${textoSuave}`}>
+              Cuota del {fechaCorta(m.fecha)} · compra del {fechaCorta(m.fechaCompra)}
+            </span>
+          )}
           {enFiltro && (
             <span className="mt-1 inline-block rounded bg-sky-100 px-1.5 py-0.5 text-xs text-sky-900 dark:bg-sky-500/20 dark:text-sky-200">
               En {enFiltro.nombre}: $ {pesosExactos(enFiltro.monto)} de $ {pesosExactos(m.monto)}
@@ -281,6 +293,12 @@ function Fila({
           <Chip clase="bg-sky-100 text-sky-800 dark:bg-sky-500/20 dark:text-sky-300">
             💳 Pago de tarjeta{guardado ? "" : " · automático"}
           </Chip>
+        )}
+        {tipoTransferencia === "ingreso_ahorro" && !m.id.startsWith("ahorro:") && (
+          <Chip clase="bg-sky-100 text-sky-800 dark:bg-sky-500/20 dark:text-sky-300">🐷 Ingreso a ahorro</Chip>
+        )}
+        {tipoTransferencia === "retiro_ahorro" && (
+          <Chip clase="bg-sky-100 text-sky-800 dark:bg-sky-500/20 dark:text-sky-300">↩ Retiro de ahorro</Chip>
         )}
         {m.id.startsWith("ahorro:") && (
           <Chip clase="bg-sky-100 text-sky-800 dark:bg-sky-500/20 dark:text-sky-300">Objetivo de ahorro · falta</Chip>

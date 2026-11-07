@@ -138,7 +138,7 @@ export function armarInforme(datos: Datos, opciones: OpcionesInforme): Informe {
 
   tablas.push({
     titulo: "Resumen mensual",
-    nota: "Ingresos y gastos de cada mes. Los meses 'real' ya pasaron; 'en curso' mezcla lo cargado con lo que falta según el plan; 'previsto' es la proyección con gastos fijos, cuotas, presupuestos y recurrentes. Gastos con tarjeta: cuentan en el mes en que cierra el resumen. 'Plata que sale' suma los gastos de las cuentas y el resumen de tarjeta que vence en el mes. 'Resto' es lo que sobra (o falta) acumulado después de apartar el ahorro.",
+    nota: "Ingresos y gastos de cada mes. Los meses 'real' ya pasaron; 'en curso' mezcla lo cargado con lo que falta según el plan; 'previsto' es la proyección con gastos fijos, cuotas, presupuestos y recurrentes. Gastos con tarjeta: cuentan en el mes en que cierra el resumen. 'Plata que sale' suma los gastos de las cuentas y el resumen de tarjeta que vence en el mes. 'Sacado de ahorro' es lo que se pasó de las cuentas de ahorro o inversión a las de gastar: no es ingreso, pero se puede usar. 'Resto' es lo que sobra (o falta) acumulado: lo que sobró del mes anterior más ingresos y lo sacado de ahorro, menos la plata que sale y el ahorro.",
     columnas: [
       "Mes",
       "Tipo",
@@ -147,6 +147,7 @@ export function armarInforme(datos: Datos, opciones: OpcionesInforme): Informe {
       "Ingresos − gastos",
       "Plata que sale",
       "Ahorro e inversión",
+      "Sacado de ahorro",
       "Cuotas del mes",
       "Resto acumulado",
     ],
@@ -158,6 +159,7 @@ export function armarInforme(datos: Datos, opciones: OpcionesInforme): Informe {
       $(m.neto),
       $(m.gastosDelMes),
       $(m.ahorroDelMes),
+      $(m.retirosAhorro),
       $(m.cuotasDelMes),
       $(m.resto),
     ]),
