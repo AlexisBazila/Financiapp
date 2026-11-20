@@ -299,6 +299,9 @@ function Grilla({
     (plan ?? prevision).some((m) => m.retirosAhorro !== 0) || prevision.some((m) => m.retirosAhorro !== 0);
   const hayAportesSueltos =
     (plan ?? prevision).some((m) => m.aportesSueltos !== 0) || prevision.some((m) => m.aportesSueltos !== 0);
+  /** Lo que hay en las cuentas de ahorro e inversión (reserva y no inmediatas) al cierre del mes. */
+  const ahorrado = (m: MesPrevision) => m.reserva + m.disponible48h;
+  const hayAhorrado = (plan ?? prevision).some((m) => ahorrado(m) !== 0) || prevision.some((m) => ahorrado(m) !== 0);
   const presupuestos = [
     ...new Map((plan ?? prevision).flatMap((m) => m.presupuestos).map((p) => [p.id, p.nombre])),
   ];
@@ -601,11 +604,31 @@ function Grilla({
               total,
               signo,
             )}
-            {(objetivos.length > 0 || hayAportesSueltos) && (
+            {(objetivos.length > 0 || hayAportesSueltos || hayAhorrado) && (
               <>
                 {separador("Ahorro e inversión", "ahorro")}
+                {hayAhorrado && (
+                  <tr>
+                    <th
+                      scope="row"
+                      className={primera}
+                      title="Lo que queda en las cuentas de ahorro e inversión (reserva y no inmediatas) al cierre de cada mes: lo del mes anterior, más lo que ahorrás y los rendimientos, menos lo que sacás"
+                    >
+                      Ahorro acumulado
+                      <div className="text-xs font-normal text-black/50 dark:text-white/50">
+                        saldo de ahorro al cierre: anterior + ahorro{hayRetiros ? " − sacado de ahorro" : ""}
+                      </div>
+                    </th>
+                    {prevision.map((m, i) => (
+                      <td key={m.mes} className={`${celda} font-semibold ${ahorrado(m) < 0 ? "text-red-600" : azul()}`}>
+                        {sinReal(m) ? "" : ahorrado(m) === 0 ? "–" : pesos(ahorrado(m))}
+                        {debajo(ahorrado, i)}
+                      </td>
+                    ))}
+                  </tr>
+                )}
                 {fila(
-                  "Total ahorro",
+                  "Total ahorro del mes",
                   (m: MesPrevision) => m.ahorroDelMes,
                   "font-semibold",
                   azul,
